@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>CLF Draft 26/27</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="app">
+    <header class="hero">
+      <div>
+        <p class="eyebrow">FANTASY PREMIER LEAGUE • DRAFT</p>
+        <h1>CLF Draft <span>26/27</span></h1>
+        <p class="sub">League table · Gameweek <strong id="gw">1</strong></p>
+      </div>
+      <button id="refresh" class="refresh" type="button">↻ Refresh</button>
+    </header>
+
+    <section class="summary" aria-label="League summary">
+      <div class="stat"><span>Managers</span><strong id="managerCount">—</strong></div>
+      <div class="stat"><span>Top score</span><strong id="topScore">—</strong></div>
+      <div class="stat"><span>Average</span><strong id="average">—</strong></div>
+      <div class="stat"><span>Updated</span><strong id="updated">—</strong></div>
+    </section>
+
+    <section class="card">
+      <div class="card-head">
+        <div>
+          <h2>League table</h2>
+          <p id="status">Loading live data…</p>
+        </div>
+        <span class="live"><i></i> LIVE</span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Pos</th><th>Manager</th><th>GW</th><th>Total</th><th>Move</th></tr></thead>
+          <tbody id="tableBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <footer>
+      <span>League ID: 12368</span>
+      <span>Data from Fantasy Premier League Draft</span>
+    </footer>
+  </main>
+  <script src="script.js"></script>
+</body>
+</html>
