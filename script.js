@@ -26,7 +26,6 @@ async function fetchFPLDraftData() {
       statusElement.style.color = "#00ff87";
     }
 
-    // Render all UI components
     updateMetricCards(draftData);
     renderLeagueTable(draftData);
     renderAccolades(draftData);
@@ -46,24 +45,20 @@ function updateMetricCards(draftData) {
   const entriesList = draftData.league_entries || [];
   const standingsList = draftData.standings || [];
 
-  // 1. Managers Count
   const managerCountEl = document.getElementById("managerCount");
   if (managerCountEl) managerCountEl.textContent = entriesList.length || 0;
 
   if (standingsList.length > 0) {
-    // 2. Top Score (Highest Total Points)
     const topScore = Math.max(...standingsList.map(s => s.total ?? s.total_points ?? 0));
     const topScoreEl = document.getElementById("topScore");
     if (topScoreEl) topScoreEl.textContent = topScore;
 
-    // 3. Average Score
     const totalSum = standingsList.reduce((acc, s) => acc + (s.total ?? s.total_points ?? 0), 0);
     const avgScore = Math.round(totalSum / standingsList.length);
     const averageEl = document.getElementById("average");
     if (averageEl) averageEl.textContent = avgScore;
   }
 
-  // 4. Last Updated Timestamp
   const updatedEl = document.getElementById("updated");
   if (updatedEl) {
     const now = new Date();
@@ -108,7 +103,6 @@ function renderLeagueTable(draftData) {
     const rank = row.rank || (index + 1);
     const lastRank = row.last_rank || rank;
     
-    // Rank movement badge
     let moveHtml = `-`;
     if (lastRank > rank) {
       moveHtml = `<span style="color:#00ff87; font-weight:600;">▲ ${lastRank - rank}</span>`;
@@ -149,33 +143,29 @@ function renderAccolades(draftData) {
   if (gwHighNameEl && gwHighTeam) gwHighNameEl.textContent = gwHighTeam.teamName;
   if (gwHighStatEl) gwHighStatEl.textContent = `${gwHigh.event_total ?? gwHigh.points_for ?? 0} pts (GW)`;
 
-  // 2. League Leader
-  const leader = standingsList.find(s => (s.rank || 1) === 1) || standingsList[0];
-  const leaderTeam = teamsMap[leader.league_entry || leader.entry_id];
-  const topPerformerNameEl = document.getElementById("top-performer-name");
-  const topPerformerStatEl = document.getElementById("top-performer-stat");
+  // 2. Gameweek Flop (Lowest GW Score)
+  const gwLow = standingsList.reduce((min, item) => 
+    ((item.event_total ?? item.points_for ?? 999) < (min.event_total ?? min.points_for ?? 999)) ? item : min, standingsList[0]);
 
-  if (topPerformerNameEl && leaderTeam) topPerformerNameEl.textContent = leaderTeam.teamName;
-  if (topPerformerStatEl) topPerformerStatEl.textContent = `${leader.total ?? leader.total_points ?? 0} pts Total`;
+  const gwLowTeam = teamsMap[gwLow.league_entry || gwLow.entry_id];
+  const gwLowNameEl = document.getElementById("gw-low-name");
+  const gwLowStatEl = document.getElementById("gw-low-stat");
 
-  // 3. Closest Margin (Difference between 1st and 2nd place)
-  if (standingsList.length >= 2) {
-    const sorted = [...standingsList].sort((a, b) => (b.total ?? 0) - (a.total ?? 0));
-    const gap = (sorted[0].total ?? 0) - (sorted[1].total ?? 0);
-    const firstTeam = teamsMap[sorted[0].league_entry || sorted[0].entry_id];
-    const secondTeam = teamsMap[sorted[1].league_entry || sorted[1].entry_id];
+  if (gwLowNameEl && gwLowTeam) gwLowNameEl.textContent = gwLowTeam.teamName;
+  if (gwLowStatEl) gwLowStatEl.textContent = `${gwLow.event_total ?? gwLow.points_for ?? 0} pts (GW)`;
 
-    const closestNameEl = document.getElementById("closest-race-name");
-    const closestStatEl = document.getElementById("closest-race-stat");
+  // 3. Wooden Spoon (Lowest Overall Rank / Score)
+  const woodenSpoon = standingsList.reduce((min, item) => 
+    ((item.total ?? item.total_points ?? 9999) < (min.total ?? min.total_points ?? 9999)) ? item : min, standingsList[0]);
 
-    if (closestNameEl && firstTeam && secondTeam) {
-      closestNameEl.textContent = `${firstTeam.teamName} vs ${secondTeam.teamName}`;
-    }
-    if (closestStatEl) closestStatEl.textContent = `${gap} pts margin`;
-  }
+  const woodenSpoonTeam = teamsMap[woodenSpoon.league_entry || woodenSpoon.entry_id];
+  const woodenSpoonNameEl = document.getElementById("wooden-spoon-name");
+  const woodenSpoonStatEl = document.getElementById("wooden-spoon-stat");
+
+  if (woodenSpoonNameEl && woodenSpoonTeam) woodenSpoonNameEl.textContent = woodenSpoonTeam.teamName;
+  if (woodenSpoonStatEl) woodenSpoonStatEl.textContent = `${woodenSpoon.total ?? woodenSpoon.total_points ?? 0} pts Total`;
 }
 
-// Initialise event listeners and fetch on page load
 document.addEventListener("DOMContentLoaded", () => {
   fetchFPLDraftData();
 
