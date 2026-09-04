@@ -211,12 +211,11 @@ function renderAccolades(draftData, transactions) {
   // 6. Most Transfers Made (Counted directly from active transaction feed)
   const txCountsByEntry = {};
 
-  // Count all successful 'a' (added) transactions per entry ID
   if (Array.isArray(transactions) && transactions.length > 0) {
     transactions.forEach(tx => {
-      if (tx.result === 'a' || tx.status === 'a') { // 'a' = accepted/added
-        const entryId = tx.entry;
-        txCountsByEntry[entryId] = (txCountsByEntry[entryId] || 0) + 1;
+      // Count every completed transaction entry ID
+      if (tx.entry) {
+        txCountsByEntry[tx.entry] = (txCountsByEntry[tx.entry] || 0) + 1;
       }
     });
   }
@@ -224,10 +223,10 @@ function renderAccolades(draftData, transactions) {
   let maxTxCount = -1;
   let topTinkerEntryId = null;
 
-  standingsList.forEach(item => {
-    const entryId = item.league_entry || item.entry_id || item.entry;
-    // Check direct transaction feed first, fallback to standings fields if feed isn't available
-    const txCount = txCountsByEntry[entryId] ?? (item.transactions_total || item.transfers_made || 0);
+  entriesList.forEach(entry => {
+    // Check entry ID against txCountsByEntry mapping
+    const entryId = entry.id || entry.entry_id;
+    const txCount = txCountsByEntry[entryId] || 0;
 
     if (txCount > maxTxCount) {
       maxTxCount = txCount;
