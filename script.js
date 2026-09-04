@@ -17,8 +17,6 @@ async function fetchFPLDraftData() {
     }
 
     const data = await response.json();
-    
-    // Inspect the exact object structure in DevTools
     console.log("Full FPL Draft API Response:", data);
 
     if (statusElement && data.league) {
@@ -46,17 +44,21 @@ function renderStandings(data) {
   const standings = data.standings || [];
   const entries = data.league_entries || [];
 
-  // Map entry ID -> Manager & Team info
+  // Map BOTH entry_id and id to handle all FPL Draft API variants
   const entryMap = {};
   entries.forEach(entry => {
-    entryMap[entry.id] = {
+    const info = {
       teamName: entry.entry_name || "Unnamed Team",
-      managerName: `${entry.player_first_name || ''} ${entry.player_last_name || ''}`.trim() || "Unknown Manager"
+      managerName: `${entry.player_first_name || ''} ${entry.player_last_name || ''}`.trim() || "Unknown Manager",
+      shortName: entry.short_name || ""
     };
+
+    if (entry.entry_id) entryMap[entry.entry_id] = info;
+    if (entry.id) entryMap[entry.id] = info;
   });
 
+  // If standings array is empty or not yet calculated, display teams list
   if (standings.length === 0) {
-    // Fallback if standings array is empty before season/draft starts
     entries.forEach((entry, index) => {
       const tr = document.createElement("tr");
       tr.innerHTML = `
@@ -70,11 +72,13 @@ function renderStandings(data) {
     return;
   }
 
+  // Render live standings table
   standings.forEach((row, index) => {
-    // Match row to league_entry ID
-    const entryId = row.league_entry || row.entry;
-    const managerInfo = entryMap[entryId] || { teamName: "Unknown Team", managerName: "Unknown Manager" };
+    // Check possible foreign key fields in standings row
+    const targetId = row.league_entry || row.entry || row.entry_id;
+    const managerInfo = entryMap[targetId] || { teamName: "Unknown Team", managerName: "Unknown Manager" };
     
+    // Total Points vs H2H points support
     const gwPoints = row.event_total !== undefined ? row.event_total : (row.points_for || 0);
     const totalPoints = row.total !== undefined ? row.total : (row.total_points || 0);
 
