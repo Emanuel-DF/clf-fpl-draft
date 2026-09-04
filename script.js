@@ -138,14 +138,13 @@ function renderLeagueTable(draftData) {
   });
 }
 
-function renderAccolades(draftData) {
+function renderAccolades(draftData, transactions) {
   const standingsList = draftData.standings || [];
   const entriesList = draftData.league_entries || [];
   if (standingsList.length === 0) return;
 
   const teamsMap = getTeamMap(entriesList);
 
-  // Helper safe UI updater
   const setCard = (nameId, statId, name, stat) => {
     const nameEl = document.getElementById(nameId);
     const statEl = document.getElementById(statId);
@@ -177,7 +176,7 @@ function renderAccolades(draftData) {
     setCard("wooden-spoon-name", "wooden-spoon-stat", woodenSpoonTeam.teamName, `${woodenSpoon.total ?? woodenSpoon.total_points ?? 0} pts Total`);
   }
 
-  // 4. Most Weeks in First (Pacesetter)
+  // 4. Most Weeks in First
   let topRanked = standingsList.find(s => s.rank === 1) || standingsList[0];
   const topRankedTeam = teamsMap[topRanked?.league_entry || topRanked?.entry_id];
   const firstWeeks = topRanked.rank_1_count || 1; 
@@ -185,7 +184,7 @@ function renderAccolades(draftData) {
     setCard("most-first-name", "most-first-stat", topRankedTeam.teamName, `${firstWeeks} ${firstWeeks === 1 ? 'Week' : 'Weeks'}`);
   }
 
-  // 5. Most Weeks in Last (Anchor)
+  // 5. Most Weeks in Last
   const maxRankVal = Math.max(...standingsList.map(s => s.rank || 0));
   let bottomRanked = standingsList.find(s => s.rank === maxRankVal) || standingsList[standingsList.length - 1];
   const bottomRankedTeam = teamsMap[bottomRanked?.league_entry || bottomRanked?.entry_id];
@@ -194,18 +193,40 @@ function renderAccolades(draftData) {
     setCard("most-last-name", "most-last-stat", bottomRankedTeam.teamName, `${lastWeeks} ${lastWeeks === 1 ? 'Week' : 'Weeks'}`);
   }
 
-  // 6. Most Transfers Made (Tinker Man)
-  const tinkerMan = standingsList.reduce((max, item) => {
-    const txCurr = item.transactions_total ?? item.transfers_made ?? item.event_transfers ?? item.waivers ?? 0;
-    const txMax = max.transactions_total ?? max.transfers_made ?? max.event_transfers ?? max.waivers ?? 0;
-    return txCurr > txMax ? item : max;
-  }, standingsList[0]);
+  // 6. Most Transfers Made (Accurately counted from transactions feed)
+  const txCountsByEntry = {};
 
-  const tinkerManTeam = teamsMap[tinkerMan?.league_entry || tinkerMan?.entry_id];
-  const totalTx = tinkerMan?.transactions_total ?? tinkerMan?.transfers_made ?? tinkerMan?.event_transfers ?? 0;
+  if (Array.isArray(transactions)) {
+    transactions.forEach(tx => {
+      // Every item in the transactions list represents a completed swap
+      if (tx.entry) {
+        txCountsByEntry[tx.entry] = (txCountsByEntry[tx.entry] || 0) + 1;
+      }
+    });
+  }
+
+  let maxTxCount = -1;
+  let topTinkerEntryId = null;
+
+  entriesList.forEach(entry => {
+    const entryId = entry.id; 
+    const count = txCountsByEntry[entryId] || 0;
+
+    if (count > maxTxCount) {
+      maxTxCount = count;
+      topTinkerEntryId = entryId;
+    }
+  });
+
+  const tinkerManTeam = teamsMap[topTinkerEntryId];
 
   if (tinkerManTeam) {
-    setCard("most-transfers-name", "most-transfers-stat", tinkerManTeam.teamName, `${totalTx} ${totalTx === 1 ? 'Transfer' : 'Transfers'}`);
+    setCard(
+      "most-transfers-name", 
+      "most-transfers-stat", 
+      tinkerManTeam.teamName, 
+      `${maxTxCount} ${maxTxCount === 1 ? 'Transfer' : 'Transfers'}`
+    );
   }
 }
 
