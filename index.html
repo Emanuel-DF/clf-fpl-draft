@@ -287,7 +287,6 @@
   const txUrl = `${PROXY}?url=${encodeURIComponent(`https://draft.premierleague.com/api/draft/league/${LEAGUE_ID}/transactions`)}`;
 
   try {
-    // 1. Fetch details and transactions together
     const [detailsRes, txRes] = await Promise.all([
       fetch(detailsUrl),
       fetch(txUrl)
@@ -297,7 +296,6 @@
     const txData = await txRes.json();
     const transactions = txData.transactions || txData || [];
 
-    // 2. Find the entry ID for "OverAshievers"
     const entries = details.league_entries || [];
     const overashieversEntry = entries.find(e => 
       e.entry_name && e.entry_name.toLowerCase().trim() === "overashievers"
@@ -305,20 +303,22 @@
 
     if (!overashieversEntry) {
       resultEl.style.color = "#ff2882";
-      resultEl.innerHTML = `<strong>Error:</strong> Could not find team named "OverAshievers".<br>Available teams: ${entries.map(e => e.entry_name).join(", ")}`;
+      resultEl.textContent = 'Error: Could not find team named "OverAshievers".';
       return;
     }
 
-    const targetEntryId = overashieversEntry.id || overashieversEntry.entry_id;
+    // FIXED: Use entry_id instead of id to match the transaction log
+    const correctManagerId = overashieversEntry.entry_id || overashieversEntry.id;
 
-    // 3. Count total transfers for this entry ID across all gameweeks
-    const totalTransfers = transactions.filter(tx => tx.entry === targetEntryId).length;
+    // Count transactions matching the manager's team ID
+    const totalTransfers = transactions.filter(tx => tx.entry === correctManagerId).length;
 
-    // 4. Display result
     resultEl.innerHTML = `
-      <strong>Team:</strong> ${overashieversEntry.entry_name} (ID: ${targetEntryId})<br>
+      <strong>Team:</strong> ${overashieversEntry.entry_name}<br>
       <strong>Manager:</strong> ${overashieversEntry.player_first_name} ${overashieversEntry.player_last_name}<br>
-      <strong>Total Season Transfers:</strong> <span style="font-size: 22px; color: #fff;">${totalTransfers}</span>
+      <strong>League Slot ID (id):</strong> ${overashieversEntry.id}<br>
+      <strong>Manager ID (entry_id):</strong> ${correctManagerId}<br>
+      <strong>Total Season Transfers:</strong> <span style="font-size: 24px; color: #fff;">${totalTransfers}</span>
     `;
 
   } catch (err) {
