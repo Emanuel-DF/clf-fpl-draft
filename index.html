@@ -6,61 +6,97 @@
   <title>CLF Draft 26/27</title>
   <link rel="stylesheet" href="style.css">
   <style>
-    /* Accordion Custom Styling */
-    .league-info-accordion {
-      margin-top: 1.5rem;
-      border-radius: 12px;
-      overflow: hidden;
-    }
-    .accordion-item {
-      background: var(--card-bg, #1e1e24);
-      border: 1px solid rgba(255, 255, 255, 0.08);
-      margin-bottom: 0.75rem;
-      border-radius: 8px;
-    }
-    .accordion-item summary {
-      padding: 1rem 1.25rem;
-      font-weight: bold;
-      font-size: 1rem;
-      cursor: pointer;
-      list-style: none;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      user-select: none;
-    }
-    .accordion-item summary::-webkit-details-marker {
-      display: none;
-    }
-    .accordion-item summary::after {
-      content: '►';
-      font-size: 0.8rem;
-      opacity: 0.6;
-      transition: transform 0.2s ease;
-    }
-    .accordion-item[open] summary::after {
-      transform: rotate(90deg);
-    }
-    .accordion-content {
-      padding: 0 1.25rem 1.25rem 1.25rem;
-      font-size: 0.95rem;
-      line-height: 1.5;
-      opacity: 0.9;
-      border-top: 1px solid rgba(255, 255, 255, 0.05);
-      margin-top: 0.5rem;
-      padding-top: 1rem;
-    }
-    .accordion-content ul {
-      margin: 0;
-      padding-left: 1.25rem;
-    }
-    .accordion-content li {
-      margin-bottom: 0.4rem;
-    }
-    .badge-alert {
-      color: #ff2882;
-      font-weight: bold;
-    }
+    /* --- Accordion Custom Styling --- */
+.league-info-accordion {
+  margin-top: 1.5rem;
+}
+
+.accordion-item {
+  background: var(--card-bg, #1e1e24);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  margin-bottom: 0.75rem;
+  border-radius: 12px;
+  overflow: hidden;
+  transition: border-color 0.2s ease, background-color 0.2s ease;
+}
+
+.accordion-item:hover {
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+/* Accordion Header / Summary */
+.accordion-item summary {
+  padding: 1.1rem 1.25rem;
+  font-weight: 700;
+  font-size: 1.05rem;
+  color: #ffffff; /* Bright white text */
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  user-select: none;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.accordion-item summary::-webkit-details-marker {
+  display: none;
+}
+
+/* Dropdown Arrow Indicator */
+.accordion-item summary::after {
+  content: '▼';
+  font-size: 0.75rem;
+  color: #00ff87; /* Green theme accent */
+  transition: transform 0.25s ease;
+}
+
+.accordion-item[open] summary::after {
+  transform: rotate(180deg);
+}
+
+/* Accordion Inner Content Body */
+.accordion-content {
+  padding: 1.25rem;
+  font-size: 0.95rem;
+  line-height: 1.6;
+  color: #e0e0e6; /* High contrast readable light grey */
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.2); /* Slightly darker inner area for depth */
+}
+
+/* Typography inside Accordions */
+.accordion-content p {
+  margin: 0 0 0.75rem 0;
+  color: #f0f0f5;
+}
+
+.accordion-content strong {
+  color: #ffffff;
+  font-weight: 600;
+}
+
+.accordion-content em {
+  color: rgba(255, 255, 255, 0.6);
+  font-style: italic;
+}
+
+.accordion-content ul {
+  margin: 0 0 0.75rem 0;
+  padding-left: 1.25rem;
+}
+
+.accordion-content li {
+  margin-bottom: 0.4rem;
+  color: #d1d1d8;
+}
+
+/* Alert Callout for Housekeeping */
+.badge-alert {
+  color: #ff2882 !important; /* Hot Pink Accent */
+  font-weight: 600;
+  margin: 0;
+}
   </style>
 </head>
 <body>
