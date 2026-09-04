@@ -33,45 +33,46 @@
         <span class="live"><i></i> LIVE</span>
       </div>
       <div class="table-wrap">
-<table>
-  <thead>
-    <tr>
-      <th>POS</th>
-      <th>MANAGER</th>
-      <th>GW</th>
-      <th>TOTAL</th>
-      <th>MOVE</th>
-    </tr>
-  </thead>
-  <tbody id="league-table-body">
-    <!-- Rows render here -->
-  </tbody>
-</table>
+        <table>
+          <thead>
+            <tr>
+              <th>POS</th>
+              <th>MANAGER</th>
+              <th>GW</th>
+              <th>TOTAL</th>
+              <th>MOVE</th>
+            </tr>
+          </thead>
+          <tbody id="league-table-body">
+            <!-- Rows render here -->
+          </tbody>
+        </table>
       </div>
     </section>
 
-    <section class="accolades-grid">
-  <div class="card accolade-card">
-    <div class="accolade-icon">👑</div>
-    <h3>Top Performer</h3>
-    <p id="top-performer-name">Loading...</p>
-    <span id="top-performer-stat" class="accolade-badge">—</span>
-  </div>
+    <!-- Accolades Section -->
+    <section class="accolades-grid" aria-label="League Accolades" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1rem; margin-top: 1.5rem;">
+      <div class="card" style="padding: 1.25rem; text-align: center;">
+        <div style="font-size: 1.75rem; margin-bottom: 0.5rem;">👑</div>
+        <h3 style="margin: 0; font-size: 0.9rem; opacity: 0.7; text-transform: uppercase; letter-spacing: 0.05em;">League Leader</h3>
+        <p id="top-performer-name" style="font-size: 1.1rem; font-weight: bold; margin: 0.5rem 0;">—</p>
+        <span id="top-performer-stat" style="color: #00ff87; font-weight: 600; font-size: 0.9rem;">—</span>
+      </div>
 
-  <div class="card accolade-card">
-    <div class="accolade-icon">🔥</div>
-    <h3>Gameweek High Score</h3>
-    <p id="gw-high-name">Loading...</p>
-    <span id="gw-high-stat" class="accolade-badge">—</span>
-  </div>
+      <div class="card" style="padding: 1.25rem; text-align: center;">
+        <div style="font-size: 1.75rem; margin-bottom: 0.5rem;">🔥</div>
+        <h3 style="margin: 0; font-size: 0.9rem; opacity: 0.7; text-transform: uppercase; letter-spacing: 0.05em;">Gameweek High Scorer</h3>
+        <p id="gw-high-name" style="font-size: 1.1rem; font-weight: bold; margin: 0.5rem 0;">—</p>
+        <span id="gw-high-stat" style="color: #00ff87; font-weight: 600; font-size: 0.9rem;">—</span>
+      </div>
 
-  <div class="card accolade-card">
-    <div class="accolade-icon">🎯</div>
-    <h3>Tightest Matchup</h3>
-    <p id="closest-race-name">Loading...</p>
-    <span id="closest-race-stat" class="accolade-badge">—</span>
-  </div>
-</section>
+      <div class="card" style="padding: 1.25rem; text-align: center;">
+        <div style="font-size: 1.75rem; margin-bottom: 0.5rem;">⚔️</div>
+        <h3 style="margin: 0; font-size: 0.9rem; opacity: 0.7; text-transform: uppercase; letter-spacing: 0.05em;">Title Race Gap</h3>
+        <p id="closest-race-name" style="font-size: 1.1rem; font-weight: bold; margin: 0.5rem 0;">—</p>
+        <span id="closest-race-stat" style="color: #00ff87; font-weight: 600; font-size: 0.9rem;">—</span>
+      </div>
+    </section>
 
     <footer>
       <span>League ID: 12368</span>
