@@ -40,7 +40,7 @@ async function fetchFPLDraftData() {
 
     if (statusElement && draftData.league) {
       statusElement.textContent = `Connected! Loaded league: ${draftData.league.name}`;
-      statusElement.style.color = "#00ff87";
+      statusElement.style.color = "#313131";
     }
 
     updateMetricCards(draftData);
