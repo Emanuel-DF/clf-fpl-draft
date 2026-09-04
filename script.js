@@ -2,10 +2,7 @@ const LEAGUE_ID = "12368";
 const WORKER_URL = "https://fpl-proxy.emanmedia02.workers.dev"; 
 
 const FPL_DRAFT_API = `https://draft.premierleague.com/api/league/${LEAGUE_ID}/details`;
-const TRANSACTIONS_API = `https://draft.premierleague.com/api/draft/league/${LEAGUE_ID}/transactions`;
-
 const FULL_URL = `${WORKER_URL}?url=${encodeURIComponent(FPL_DRAFT_API)}`;
-const TRANSACTIONS_URL = `${WORKER_URL}?url=${encodeURIComponent(TRANSACTIONS_API)}`;
 
 async function fetchFPLDraftData() {
   const statusElement = document.getElementById("status");
@@ -15,33 +12,14 @@ async function fetchFPLDraftData() {
     if (statusElement) statusElement.textContent = "Fetching live FPL Draft data...";
     if (refreshBtn) refreshBtn.style.opacity = "0.5";
 
-    // 1. Fetch both the league details AND transactions feed simultaneously
-    const [detailsRes, txRes] = await Promise.allSettled([
-      fetch(FULL_URL),
-      fetch(TRANSACTIONS_URL)
-    ]);
-
-    if (detailsRes.status !== "fulfilled" || !detailsRes.value.ok) {
-      throw new Error(`HTTP error! Status: ${detailsRes.value?.status}`);
+    const response = await fetch(FULL_URL);
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! Status: ${response.status}`);
     }
 
-    const draftData = await detailsRes.value.json();
-    let transactionData = [];
-
-    if (txRes.status === "fulfilled" && txRes.value.ok) {
-      const txJson = await txRes.value.json();
-      transactionData = txJson.transactions || txJson || [];
-    }
-
-    // --- DEBUG CODE (TEMPORARY) ---
-    const debugEl = document.getElementById("debug-transfers");
-    if (debugEl) {
-      debugEl.textContent = `Debug Total League Transfers: ${transactionData.length}`;
-    }
-    // ------------------------------
-
+    const draftData = await response.json();
     console.log("Full FPL Draft API Response:", draftData);
-    console.log("Transactions Response:", transactionData);
 
     updateGameweekHeader(draftData);
 
@@ -52,9 +30,7 @@ async function fetchFPLDraftData() {
 
     updateMetricCards(draftData);
     renderLeagueTable(draftData);
-    
-    // 2. Pass transactionData into renderAccolades
-    renderAccolades(draftData, transactionData);
+    renderAccolades(draftData);
 
   } catch (error) {
     console.error("Error fetching FPL Draft data:", error);
@@ -162,7 +138,7 @@ function renderLeagueTable(draftData) {
   });
 }
 
-function renderAccolades(draftData, transactions) {
+function renderAccolades(draftData) {
   const standingsList = draftData.standings || [];
   const entriesList = draftData.league_entries || [];
   if (standingsList.length === 0) return;
@@ -217,39 +193,13 @@ function renderAccolades(draftData, transactions) {
     setCard("most-last-name", "most-last-stat", bottomRankedTeam.teamName, `${lastWeeks} ${lastWeeks === 1 ? 'Week' : 'Weeks'}`);
   }
 
-  // 6. Most Transfers Made (Counted directly from active transaction feed)
-  const txCountsByEntry = {};
-
-  if (Array.isArray(transactions) && transactions.length > 0) {
-    transactions.forEach(tx => {
-      if (tx.entry) {
-        txCountsByEntry[tx.entry] = (txCountsByEntry[tx.entry] || 0) + 1;
-      }
-    });
-  }
-
-  let maxTxCount = -1;
-  let topTinkerEntryId = null;
-
-  entriesList.forEach(entry => {
-    const entryId = entry.id || entry.entry_id; 
-    const count = txCountsByEntry[entryId] || 0;
-
-    if (count > maxTxCount) {
-      maxTxCount = count;
-      topTinkerEntryId = entryId;
-    }
-  });
-
-  const tinkerManTeam = teamsMap[topTinkerEntryId];
-
+  // 6. Most Transfers Made
+  const topTinker = standingsList.reduce((max, item) => 
+    ((item.transactions_total || item.transfers_made || 0) > (max.transactions_total || max.transfers_made || -1)) ? item : max, standingsList[0]);
+  const tinkerManTeam = teamsMap[topTinker?.league_entry || topTinker?.entry_id];
+  const totalCount = topTinker?.transactions_total || topTinker?.transfers_made || 0;
   if (tinkerManTeam) {
-    setCard(
-      "most-transfers-name", 
-      "most-transfers-stat", 
-      tinkerManTeam.teamName, 
-      `${maxTxCount} ${maxTxCount === 1 ? 'Transfer' : 'Transfers'}`
-    );
+    setCard("most-transfers-name", "most-transfers-stat", tinkerManTeam.teamName, `${totalCount} ${totalCount === 1 ? 'Transfer' : 'Transfers'}`);
   }
 }
 
