@@ -21,7 +21,6 @@ async function fetchFPLDraftData() {
     const draftData = await response.json();
     console.log("Full FPL Draft API Response:", draftData);
 
-    // Update Gameweek Header Dynamically
     updateGameweekHeader(draftData);
 
     if (statusElement && draftData.league) {
@@ -146,7 +145,7 @@ function renderAccolades(draftData) {
 
   const teamsMap = getTeamMap(entriesList);
 
-  // Helper function to safely update element text content
+  // Helper safe UI updater
   const setCard = (nameId, statId, name, stat) => {
     const nameEl = document.getElementById(nameId);
     const statEl = document.getElementById(statId);
@@ -162,7 +161,7 @@ function renderAccolades(draftData) {
     setCard("gw-high-name", "gw-high-stat", gwHighTeam.teamName, `${gwHigh.event_total ?? gwHigh.points_for ?? 0} pts (GW)`);
   }
 
-  // 2. Gameweek Flop (Lowest GW Score)
+  // 2. Gameweek Flop
   const gwLow = standingsList.reduce((min, item) => 
     ((item.event_total ?? item.points_for ?? 999) < (min.event_total ?? min.points_for ?? 999)) ? item : min, standingsList[0]);
   const gwLowTeam = teamsMap[gwLow?.league_entry || gwLow?.entry_id];
@@ -170,12 +169,43 @@ function renderAccolades(draftData) {
     setCard("gw-low-name", "gw-low-stat", gwLowTeam.teamName, `${gwLow.event_total ?? gwLow.points_for ?? 0} pts (GW)`);
   }
 
-  // 3. Wooden Spoon (Lowest Overall)
+  // 3. Wooden Spoon
   const woodenSpoon = standingsList.reduce((min, item) => 
     ((item.total ?? item.total_points ?? 9999) < (min.total ?? min.total_points ?? 9999)) ? item : min, standingsList[0]);
   const woodenSpoonTeam = teamsMap[woodenSpoon?.league_entry || woodenSpoon?.entry_id];
   if (woodenSpoonTeam) {
     setCard("wooden-spoon-name", "wooden-spoon-stat", woodenSpoonTeam.teamName, `${woodenSpoon.total ?? woodenSpoon.total_points ?? 0} pts Total`);
+  }
+
+  // 4. Most Weeks in First (Pacesetter)
+  let topRanked = standingsList.find(s => s.rank === 1) || standingsList[0];
+  const topRankedTeam = teamsMap[topRanked?.league_entry || topRanked?.entry_id];
+  const firstWeeks = topRanked.rank_1_count || 1; 
+  if (topRankedTeam) {
+    setCard("most-first-name", "most-first-stat", topRankedTeam.teamName, `${firstWeeks} ${firstWeeks === 1 ? 'Week' : 'Weeks'}`);
+  }
+
+  // 5. Most Weeks in Last (Anchor)
+  const maxRankVal = Math.max(...standingsList.map(s => s.rank || 0));
+  let bottomRanked = standingsList.find(s => s.rank === maxRankVal) || standingsList[standingsList.length - 1];
+  const bottomRankedTeam = teamsMap[bottomRanked?.league_entry || bottomRanked?.entry_id];
+  const lastWeeks = bottomRanked.rank_last_count || 1;
+  if (bottomRankedTeam) {
+    setCard("most-last-name", "most-last-stat", bottomRankedTeam.teamName, `${lastWeeks} ${lastWeeks === 1 ? 'Week' : 'Weeks'}`);
+  }
+
+  // 6. Most Transfers Made (Tinker Man)
+  const tinkerMan = standingsList.reduce((max, item) => {
+    const txCurr = item.transactions_total ?? item.transfers_made ?? item.event_transfers ?? item.waivers ?? 0;
+    const txMax = max.transactions_total ?? max.transfers_made ?? max.event_transfers ?? max.waivers ?? 0;
+    return txCurr > txMax ? item : max;
+  }, standingsList[0]);
+
+  const tinkerManTeam = teamsMap[tinkerMan?.league_entry || tinkerMan?.entry_id];
+  const totalTx = tinkerMan?.transactions_total ?? tinkerMan?.transfers_made ?? tinkerMan?.event_transfers ?? 0;
+
+  if (tinkerManTeam) {
+    setCard("most-transfers-name", "most-transfers-stat", tinkerManTeam.teamName, `${totalTx} ${totalTx === 1 ? 'Transfer' : 'Transfers'}`);
   }
 }
 
