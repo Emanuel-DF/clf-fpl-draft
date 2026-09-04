@@ -8,6 +8,13 @@ async function fetchFPLDraftData() {
   const statusElement = document.getElementById("status");
   const refreshBtn = document.getElementById("refresh");
 
+  // --- DEBUG CODE (TEMPORARY) ---
+const debugEl = document.getElementById("debug-transfers");
+if (debugEl) {
+  debugEl.textContent = `Debug Total League Transfers: ${transactionData.length}`;
+}
+// ------------------------------
+
   try {
     if (statusElement) statusElement.textContent = "Fetching live FPL Draft data...";
     if (refreshBtn) refreshBtn.style.opacity = "0.5";
