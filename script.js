@@ -6,9 +6,11 @@ const FULL_URL = `${WORKER_URL}?url=${encodeURIComponent(FPL_DRAFT_API)}`;
 
 async function fetchFPLDraftData() {
   const statusElement = document.getElementById("status");
+  const refreshBtn = document.getElementById("refresh");
 
   try {
     if (statusElement) statusElement.textContent = "Fetching live FPL Draft data...";
+    if (refreshBtn) refreshBtn.style.opacity = "0.5";
 
     const response = await fetch(FULL_URL);
     
@@ -24,8 +26,9 @@ async function fetchFPLDraftData() {
       statusElement.style.color = "#00ff87";
     }
 
-    renderLeagueTable(draftData);
+    // Populate UI components
     updateMetricCards(draftData);
+    renderLeagueTable(draftData);
 
   } catch (error) {
     console.error("Error fetching FPL Draft data:", error);
@@ -33,6 +36,8 @@ async function fetchFPLDraftData() {
       statusElement.textContent = "Failed to load live data (Check console for details).";
       statusElement.style.color = "#ff2882";
     }
+  } finally {
+    if (refreshBtn) refreshBtn.style.opacity = "1";
   }
 }
 
@@ -40,28 +45,29 @@ function updateMetricCards(draftData) {
   const entriesList = draftData.league_entries || [];
   const standingsList = draftData.standings || [];
 
-  // Update Managers Count
-  const managersCard = document.querySelector('[data-card="managers"]');
-  if (managersCard) managersCard.textContent = entriesList.length || 0;
+  // 1. Managers Count
+  const managerCountEl = document.getElementById("managerCount");
+  if (managerCountEl) managerCountEl.textContent = entriesList.length || 0;
 
   if (standingsList.length > 0) {
-    // Find highest total score
+    // 2. Top Score (Highest Total Points)
     const topScore = Math.max(...standingsList.map(s => s.total ?? s.total_points ?? 0));
-    const topScoreCard = document.querySelector('[data-card="top-score"]');
-    if (topScoreCard) topScoreCard.textContent = topScore;
+    const topScoreEl = document.getElementById("topScore");
+    if (topScoreEl) topScoreEl.textContent = topScore;
 
-    // Calculate League Average Total Score
+    // 3. Average Score
     const totalSum = standingsList.reduce((acc, s) => acc + (s.total ?? s.total_points ?? 0), 0);
     const avgScore = Math.round(totalSum / standingsList.length);
-    const avgCard = document.querySelector('[data-card="average"]');
-    if (avgCard) avgCard.textContent = avgScore;
+    const averageEl = document.getElementById("average");
+    if (averageEl) averageEl.textContent = avgScore;
   }
 
-  // Update Last Refreshed Time
-  const now = new Date();
-  const timeString = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  const updatedCard = document.querySelector('[data-card="updated"]');
-  if (updatedCard) updatedCard.textContent = timeString;
+  // 4. Last Updated Timestamp
+  const updatedEl = document.getElementById("updated");
+  if (updatedEl) {
+    const now = new Date();
+    updatedEl.textContent = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }
 }
 
 function renderLeagueTable(draftData) {
@@ -73,6 +79,7 @@ function renderLeagueTable(draftData) {
   const standingsList = draftData.standings || [];
   const entriesList = draftData.league_entries || [];
 
+  // Map entries by id and entry_id to handle foreign key resolution
   const teamsMap = {};
   entriesList.forEach(item => {
     const managerDetails = {
@@ -97,11 +104,12 @@ function renderLeagueTable(draftData) {
     const rank = row.rank || (index + 1);
     const lastRank = row.last_rank || rank;
     
+    // Rank movement badge
     let moveHtml = `-`;
     if (lastRank > rank) {
-      moveHtml = `<span style="color:#00ff87;">▲ ${lastRank - rank}</span>`;
+      moveHtml = `<span style="color:#00ff87; font-weight:600;">▲ ${lastRank - rank}</span>`;
     } else if (lastRank < rank) {
-      moveHtml = `<span style="color:#ff2882;">▼ ${rank - lastRank}</span>`;
+      moveHtml = `<span style="color:#ff2882; font-weight:600;">▼ ${rank - lastRank}</span>`;
     }
 
     const gameweekPoints = row.event_total ?? row.points_for ?? row.event_points ?? 0;
@@ -119,4 +127,12 @@ function renderLeagueTable(draftData) {
   });
 }
 
-document.addEventListener("DOMContentLoaded", fetchFPLDraftData);
+// Initialise event listeners and fetch on page load
+document.addEventListener("DOMContentLoaded", () => {
+  fetchFPLDraftData();
+
+  const refreshBtn = document.getElementById("refresh");
+  if (refreshBtn) {
+    refreshBtn.addEventListener("click", fetchFPLDraftData);
+  }
+});
