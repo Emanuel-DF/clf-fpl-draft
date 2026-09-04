@@ -2,7 +2,10 @@ const LEAGUE_ID = "12368";
 const WORKER_URL = "https://fpl-proxy.emanmedia02.workers.dev"; 
 
 const FPL_DRAFT_API = `https://draft.premierleague.com/api/league/${LEAGUE_ID}/details`;
-const FULL_URL = `${WORKER_URL}?url=${encodeURIComponent(FPL_DRAFT_API)}`;
+const FPL_GAME_API = `https://draft.premierleague.com/api/game`;
+
+const FULL_DRAFT_URL = `${WORKER_URL}?url=${encodeURIComponent(FPL_DRAFT_API)}`;
+const FULL_GAME_URL = `${WORKER_URL}?url=${encodeURIComponent(FPL_GAME_API)}`;
 
 async function fetchFPLDraftData() {
   const statusElement = document.getElementById("status");
@@ -12,14 +15,29 @@ async function fetchFPLDraftData() {
     if (statusElement) statusElement.textContent = "Fetching live FPL Draft data...";
     if (refreshBtn) refreshBtn.style.opacity = "0.5";
 
-    const response = await fetch(FULL_URL);
+    // Fetch both league details and game status in parallel
+    const [leagueRes, gameRes] = await Promise.allSettled([
+      fetch(FULL_DRAFT_URL),
+      fetch(FULL_GAME_URL)
+    ]);
     
-    if (!response.ok) {
-      throw new Error(`HTTP error! Status: ${response.status}`);
+    if (leagueRes.status !== "fulfilled" || !leagueRes.value.ok) {
+      throw new Error(`HTTP error fetching league data!`);
     }
 
-    const draftData = await response.json();
+    const draftData = await leagueRes.value.json();
     console.log("Full FPL Draft API Response:", draftData);
+
+    // Update Current Gameweek Number dynamically
+    if (gameRes.status === "fulfilled" && gameRes.value.ok) {
+      const gameData = await gameRes.value.json();
+      const currentGW = gameData.current_event || gameData.event || 2;
+      updateGameweekNumber(currentGW);
+    } else {
+      // Fallback: Infer GW from standings or default to 2
+      const inferredGW = draftData.league?.current_event || 2;
+      updateGameweekNumber(inferredGW);
+    }
 
     if (statusElement && draftData.league) {
       statusElement.textContent = `Connected! Loaded league: ${draftData.league.name}`;
@@ -38,6 +56,13 @@ async function fetchFPLDraftData() {
     }
   } finally {
     if (refreshBtn) refreshBtn.style.opacity = "1";
+  }
+}
+
+function updateGameweekNumber(gwNumber) {
+  const gwElement = document.getElementById("gw");
+  if (gwElement) {
+    gwElement.textContent = gwNumber;
   }
 }
 
