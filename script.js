@@ -16,15 +16,15 @@ async function fetchFPLDraftData() {
       throw new Error(`HTTP error! Status: ${response.status}`);
     }
 
-    const data = await response.json();
-    console.log("Full FPL Draft API Response:", data);
+    const draftData = await response.json();
+    console.log("Full FPL Draft API Response:", draftData);
 
-    if (statusElement && data.league) {
-      statusElement.textContent = `Connected! Loaded league: ${data.league.name}`;
+    if (statusElement && draftData.league) {
+      statusElement.textContent = `Connected! Loaded league: ${draftData.league.name}`;
       statusElement.style.color = "#00ff87";
     }
 
-    renderStandings(data);
+    renderLeagueTable(draftData);
 
   } catch (error) {
     console.error("Error fetching FPL Draft data:", error);
@@ -35,63 +35,62 @@ async function fetchFPLDraftData() {
   }
 }
 
-function renderStandings(data) {
+function renderLeagueTable(draftData) {
   const tableBody = document.getElementById("league-table-body");
   if (!tableBody) return;
 
   tableBody.innerHTML = ""; 
 
-  const standings = data.standings || [];
-  const entries = data.league_entries || [];
+  const standingsList = draftData.standings || [];
+  const entriesList = draftData.league_entries || [];
 
-  // Map BOTH entry_id and id to handle all possible foreign key links
-  const entryMap = {};
-  entries.forEach(entry => {
-    const info = {
-      teamName: entry.entry_name || "Unnamed Team",
-      managerName: `${entry.player_first_name || ''} ${entry.player_last_name || ''}`.trim() || "Unknown Manager",
-      shortName: entry.short_name || ""
+  // Map league_entries by id and entry_id to safely link managers
+  const teamsMap = {};
+  entriesList.forEach(item => {
+    const managerDetails = {
+      teamName: item.entry_name || "Unnamed Team",
+      managerName: `${item.player_first_name || ''} ${item.player_last_name || ''}`.trim() || "Unknown Manager",
+      shortName: item.short_name || ""
     };
 
-    if (entry.id) entryMap[entry.id] = info;
-    if (entry.entry_id) entryMap[entry.entry_id] = info;
+    if (item.id) teamsMap[item.id] = managerDetails;
+    if (item.entry_id) teamsMap[item.entry_id] = managerDetails;
   });
 
-  // If standings array is empty before the season starts, fall back to entries list
-  if (standings.length === 0) {
-    entries.forEach((entry, index) => {
-      const tr = document.createElement("tr");
-      tr.innerHTML = `
-        <td>${index + 1}</td>
-        <td><strong>${entry.entry_name}</strong><br><small>${entry.player_first_name} ${entry.player_last_name}</small></td>
-        <td>0</td>
-        <td>0</td>
-      `;
-      tableBody.appendChild(tr);
-    });
-    return;
-  }
+  // Decide row source: fallback to entries list if standings not calculated yet
+  const rowsToRender = standingsList.length > 0 ? standingsList : entriesList;
 
-  // Render live standings table
-  standings.forEach((row, index) => {
-    const targetId = row.league_entry || row.entry || row.entry_id || row.id;
-    const managerInfo = entryMap[targetId] || { 
+  rowsToRender.forEach((row, index) => {
+    // Foreign key lookup
+    const keyId = row.league_entry || row.entry || row.entry_id || row.id;
+    const teamInfo = teamsMap[keyId] || { 
       teamName: row.entry_name || "Unknown Team", 
       managerName: `${row.player_first_name || ''} ${row.player_last_name || ''}`.trim() || "Unknown Manager" 
     };
     
-    // Extract points with safety fallbacks
-    const gwPoints = row.event_total ?? row.points_for ?? row.event_points ?? 0;
-    const totalPoints = row.total ?? row.total_points ?? row.points ?? 0;
+    const rank = row.rank || (index + 1);
+    const lastRank = row.last_rank || rank;
+    
+    // Rank change calculation for the MOVE column
+    let moveHtml = `-`;
+    if (lastRank > rank) {
+      moveHtml = `<span style="color:#00ff87;">▲ ${lastRank - rank}</span>`;
+    } else if (lastRank < rank) {
+      moveHtml = `<span style="color:#ff2882;">▼ ${rank - lastRank}</span>`;
+    }
 
-    const tr = document.createElement("tr");
-    tr.innerHTML = `
-      <td>${row.rank || index + 1}</td>
-      <td><strong>${managerInfo.teamName}</strong><br><small>${managerInfo.managerName}</small></td>
-      <td>${gwPoints}</td>
-      <td>${totalPoints}</td>
+    const gameweekPoints = row.event_total ?? row.points_for ?? row.event_points ?? 0;
+    const overallPoints = row.total ?? row.total_points ?? row.points ?? 0;
+
+    const rowElement = document.createElement("tr");
+    rowElement.innerHTML = `
+      <td>${rank}</td>
+      <td><strong>${teamInfo.teamName}</strong><br><small style="opacity: 0.7;">${teamInfo.managerName}</small></td>
+      <td>${gameweekPoints}</td>
+      <td>${overallPoints}</td>
+      <td>${moveHtml}</td>
     `;
-    tableBody.appendChild(tr);
+    tableBody.appendChild(rowElement);
   });
 }
 
