@@ -2,31 +2,46 @@ const LEAGUE_ID = "12368";
 const WORKER_URL = "https://fpl-proxy.emanmedia02.workers.dev"; 
 
 const FPL_DRAFT_API = `https://draft.premierleague.com/api/league/${LEAGUE_ID}/details`;
+const TRANSACTIONS_API = `https://draft.premierleague.com/api/draft/league/${LEAGUE_ID}/transactions`;
+
 const FULL_URL = `${WORKER_URL}?url=${encodeURIComponent(FPL_DRAFT_API)}`;
+const TRANSACTIONS_URL = `${WORKER_URL}?url=${encodeURIComponent(TRANSACTIONS_API)}`;
 
 async function fetchFPLDraftData() {
   const statusElement = document.getElementById("status");
   const refreshBtn = document.getElementById("refresh");
 
-  // --- DEBUG CODE (TEMPORARY) ---
-const debugEl = document.getElementById("debug-transfers");
-if (debugEl) {
-  debugEl.textContent = `Debug Total League Transfers: ${transactionData.length}`;
-}
-// ------------------------------
-
   try {
     if (statusElement) statusElement.textContent = "Fetching live FPL Draft data...";
     if (refreshBtn) refreshBtn.style.opacity = "0.5";
 
-    const response = await fetch(FULL_URL);
-    
-    if (!response.ok) {
-      throw new Error(`HTTP error! Status: ${response.status}`);
+    // 1. Fetch both the league details AND transactions feed simultaneously
+    const [detailsRes, txRes] = await Promise.allSettled([
+      fetch(FULL_URL),
+      fetch(TRANSACTIONS_URL)
+    ]);
+
+    if (detailsRes.status !== "fulfilled" || !detailsRes.value.ok) {
+      throw new Error(`HTTP error! Status: ${detailsRes.value?.status}`);
     }
 
-    const draftData = await response.json();
+    const draftData = await detailsRes.value.json();
+    let transactionData = [];
+
+    if (txRes.status === "fulfilled" && txRes.value.ok) {
+      const txJson = await txRes.value.json();
+      transactionData = txJson.transactions || txJson || [];
+    }
+
+    // --- DEBUG CODE (TEMPORARY) ---
+    const debugEl = document.getElementById("debug-transfers");
+    if (debugEl) {
+      debugEl.textContent = `Debug Total League Transfers: ${transactionData.length}`;
+    }
+    // ------------------------------
+
     console.log("Full FPL Draft API Response:", draftData);
+    console.log("Transactions Response:", transactionData);
 
     updateGameweekHeader(draftData);
 
@@ -37,7 +52,9 @@ if (debugEl) {
 
     updateMetricCards(draftData);
     renderLeagueTable(draftData);
-    renderAccolades(draftData);
+    
+    // 2. Pass transactionData into renderAccolades
+    renderAccolades(draftData, transactionData);
 
   } catch (error) {
     console.error("Error fetching FPL Draft data:", error);
@@ -200,12 +217,11 @@ function renderAccolades(draftData, transactions) {
     setCard("most-last-name", "most-last-stat", bottomRankedTeam.teamName, `${lastWeeks} ${lastWeeks === 1 ? 'Week' : 'Weeks'}`);
   }
 
-  // 6. Most Transfers Made (Accurately counted from transactions feed)
+  // 6. Most Transfers Made (Counted directly from active transaction feed)
   const txCountsByEntry = {};
 
-  if (Array.isArray(transactions)) {
+  if (Array.isArray(transactions) && transactions.length > 0) {
     transactions.forEach(tx => {
-      // Every item in the transactions list represents a completed swap
       if (tx.entry) {
         txCountsByEntry[tx.entry] = (txCountsByEntry[tx.entry] || 0) + 1;
       }
@@ -216,7 +232,7 @@ function renderAccolades(draftData, transactions) {
   let topTinkerEntryId = null;
 
   entriesList.forEach(entry => {
-    const entryId = entry.id; 
+    const entryId = entry.id || entry.entry_id; 
     const count = txCountsByEntry[entryId] || 0;
 
     if (count > maxTxCount) {
