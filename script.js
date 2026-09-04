@@ -1,9 +1,8 @@
-// Your FPL Draft League ID
 const LEAGUE_ID = "12368"; 
+const WORKER_URL = "https://fpl-proxy.emanmedia02.workers.dev"; 
 
-// Using AllOrigins CORS Proxy (handles Cloudflare protections reliably)
 const FPL_DRAFT_API = `https://draft.premierleague.com/api/league/${LEAGUE_ID}/details`;
-const PROXY_URL = `https://api.allorigins.win/get?url=${encodeURIComponent(FPL_DRAFT_API)}`;
+const FULL_URL = `${WORKER_URL}?url=${encodeURIComponent(FPL_DRAFT_API)}`;
 
 async function fetchFPLDraftData() {
   const statusElement = document.getElementById("status");
@@ -11,17 +10,13 @@ async function fetchFPLDraftData() {
   try {
     if (statusElement) statusElement.textContent = "Fetching live FPL Draft data...";
 
-    const response = await fetch(PROXY_URL);
+    const response = await fetch(FULL_URL);
     
     if (!response.ok) {
       throw new Error(`HTTP error! Status: ${response.status}`);
     }
 
-    const wrapperData = await response.json();
-    
-    // AllOrigins wraps the API response inside the 'contents' string property
-    const data = JSON.parse(wrapperData.contents);
-    
+    const data = await response.json();
     console.log("FPL Draft API Response:", data);
 
     if (statusElement) {
@@ -34,7 +29,7 @@ async function fetchFPLDraftData() {
   } catch (error) {
     console.error("Error fetching FPL Draft data:", error);
     if (statusElement) {
-      statusElement.textContent = "Failed to load live data. See browser console for details.";
+      statusElement.textContent = "Failed to load live data (Check console for details).";
       statusElement.style.color = "#ff2882";
     }
   }
