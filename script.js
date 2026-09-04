@@ -1,59 +1,79 @@
-const LEAGUE_ID = 12368;
-const API = `https://draft.premierleague.com/api/league/${LEAGUE_ID}/details`;
+// Replace LEAGUE_ID with your actual FPL Draft League ID
+const LEAGUE_ID = "12368"; 
 
-const $ = id => document.getElementById(id);
-const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+// Using CORS Proxy to bypass browser cross-origin restrictions
+const CORS_PROXY = "https://corsproxy.io/?";
+const FPL_DRAFT_API = `https://draft.premierleague.com/api/league/${LEAGUE_ID}/details`;
 
-function move(last, rank){
-  const n = Number(last) - Number(rank);
-  if(n > 0) return `<span class="move up">↑ ${n}</span>`;
-  if(n < 0) return `<span class="move down">↓ ${Math.abs(n)}</span>`;
-  return `<span class="move same">—</span>`;
-}
+const FULL_URL = `${CORS_PROXY}${encodeURIComponent(FPL_DRAFT_API)}`;
 
-async function load(){
-  $('status').textContent = 'Refreshing…';
-  try{
-    const r = await fetch(API, {cache:'no-store'});
-    if(!r.ok) throw new Error(`HTTP ${r.status}`);
-    const data = await r.json();
+async function fetchFPLDraftData() {
+  const statusElement = document.getElementById("status");
+  const tableBody = document.getElementById("league-table-body");
 
-    const entries = Object.fromEntries(data.league_entries.map(e => [e.id, e]));
-    const standings = [...data.standings].sort((a,b) =>
-      a.rank_sort - b.rank_sort || a.rank - b.rank
-    );
+  try {
+    if (statusElement) statusElement.textContent = "Fetching live FPL Draft data...";
 
-    const scores = standings.map(x => Number(x.event_total));
-    const avg = scores.reduce((a,b)=>a+b,0) / scores.length;
+    const response = await fetch(FULL_URL);
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! Status: ${response.status}`);
+    }
 
-    $('managerCount').textContent = standings.length;
-    $('topScore').textContent = Math.max(...scores);
-    $('average').textContent = avg.toFixed(1);
-    $('updated').textContent = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
-    $('gw').textContent = data.league.start_event ?? 1;
+    const data = await response.json();
+    
+    // Log the JSON response to inspect the structure in Developer Tools
+    console.log("FPL Draft API Response:", data);
 
-    $('tableBody').innerHTML = standings.map(s => {
-      const e = entries[s.league_entry];
-      const initials = esc(e?.short_name || '');
-      const name = esc(e?.entry_name || 'Unknown');
-      const isMe = (e?.player_first_name || '').toLowerCase() === 'emanuel';
-      return `<tr class="${isMe ? 'me' : ''}">
-        <td>${s.rank}</td>
-        <td><div class="manager"><span class="badge">${initials}</span><span>${name}</span></div></td>
-        <td>${s.event_total}</td>
-        <td class="pts">${s.total}</td>
-        <td>${move(s.last_rank,s.rank)}</td>
-      </tr>`;
-    }).join('');
+    if (statusElement) {
+      statusElement.textContent = `Connected! Loaded league: ${data.league.name}`;
+      statusElement.style.color = "#00ff87";
+    }
 
-    $('status').textContent = `Updated ${new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})} · ${data.league.name}`;
-  }catch(err){
-    console.error(err);
-    $('status').textContent = 'Could not load live data.';
-    $('tableBody').innerHTML = `<tr><td colspan="5" class="error">The FPL Draft API could not be reached directly from this browser.<br><small>${esc(err.message)}</small></td></tr>`;
+    // Render league standings
+    renderStandings(data);
+
+  } catch (error) {
+    console.error("Error fetching FPL Draft data:", error);
+    if (statusElement) {
+      statusElement.textContent = "Failed to load live data (Check console for details).";
+      statusElement.style.color = "#ff2882";
+    }
   }
 }
 
-$('refresh').addEventListener('click', load);
-load();
-setInterval(load, 120000);
+function renderStandings(data) {
+  const tableBody = document.getElementById("league-table-body");
+  if (!tableBody) return;
+
+  tableBody.innerHTML = ""; // Clear placeholder / loading rows
+
+  // Extract standings from the API response
+  const standings = data.standings || [];
+  const entries = data.league_entries || [];
+
+  // Map entry ID to entry details (manager name, team name)
+  const entryMap = {};
+  entries.forEach(entry => {
+    entryMap[entry.id] = {
+      teamName: entry.entry_name,
+      managerName: `${entry.player_first_name} ${entry.player_last_name}`
+    };
+  });
+
+  standings.forEach((row, index) => {
+    const managerInfo = entryMap[row.league_entry] || { teamName: "Unknown", managerName: "Unknown" };
+    
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${index + 1}</td>
+      <td><strong>${managerInfo.teamName}</strong><br><small>${managerInfo.managerName}</small></td>
+      <td>${row.event_total || 0}</td>
+      <td>${row.total || 0}</td>
+    `;
+    tableBody.appendChild(tr);
+  });
+}
+
+// Execute on DOM load
+document.addEventListener("DOMContentLoaded", fetchFPLDraftData);
