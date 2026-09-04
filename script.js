@@ -15,6 +15,7 @@ async function fetchFPLDraftData() {
     if (statusElement) statusElement.textContent = "Fetching live FPL Draft data...";
     if (refreshBtn) refreshBtn.style.opacity = "0.5";
 
+    // Fetch both endpoints in parallel using Promise.allSettled
     const [detailsRes, txRes] = await Promise.allSettled([
       fetch(FULL_URL),
       fetch(TRANSACTIONS_URL)
@@ -39,14 +40,12 @@ async function fetchFPLDraftData() {
 
     if (statusElement && draftData.league) {
       statusElement.textContent = `Connected! Loaded league: ${draftData.league.name}`;
-      statusElement.style.color = "#008a48";
+      statusElement.style.color = "#313131";
     }
 
     updateMetricCards(draftData);
     renderLeagueTable(draftData);
-    
-    // Pass draftData, transactionData, and trigger async bench points calculation
-    await renderAccolades(draftData, transactionData);
+    renderAccolades(draftData, transactionData);
 
   } catch (error) {
     console.error("Error fetching FPL Draft data:", error);
@@ -134,7 +133,7 @@ function renderLeagueTable(draftData) {
     
     let moveHtml = `-`;
     if (lastRank > rank) {
-      moveHtml = `<span style="color:#008a48; font-weight:600;">▲ ${lastRank - rank}</span>`;
+      moveHtml = `<span style="color:#00ff87; font-weight:600;">▲ ${lastRank - rank}</span>`;
     } else if (lastRank < rank) {
       moveHtml = `<span style="color:#ff2882; font-weight:600;">▼ ${rank - lastRank}</span>`;
     }
@@ -154,7 +153,7 @@ function renderLeagueTable(draftData) {
   });
 }
 
-async function renderAccolades(draftData, transactions = []) {
+function renderAccolades(draftData, transactions = []) {
   const standingsList = draftData.standings || [];
   const entriesList = draftData.league_entries || [];
   if (standingsList.length === 0) return;
@@ -209,8 +208,9 @@ async function renderAccolades(draftData, transactions = []) {
     setCard("most-last-name", "most-last-stat", bottomRankedTeam.teamName, `${lastWeeks} ${lastWeeks === 1 ? 'Week' : 'Weeks'}`);
   }
 
-  // 6. Most Transfers Made
+  // Count transfers per manager using entry_id
   const txCountsByEntry = {};
+
   if (Array.isArray(transactions)) {
     transactions.forEach(tx => {
       if (tx.entry) {
@@ -219,6 +219,7 @@ async function renderAccolades(draftData, transactions = []) {
     });
   }
 
+  // 6. Most Transfers Made (Manager with highest transfer count)
   let maxTxCount = -1;
   let topTinkerEntryId = null;
 
@@ -233,59 +234,25 @@ async function renderAccolades(draftData, transactions = []) {
   });
 
   const tinkerManTeam = teamsMap[topTinkerEntryId];
+
   if (tinkerManTeam) {
     const displayCount = maxTxCount > -1 ? maxTxCount : 0;
-    setCard("most-transfers-name", "most-transfers-stat", tinkerManTeam.teamName, `${displayCount} ${displayCount === 1 ? 'Transfer' : 'Transfers'}`);
+    setCard(
+      "most-transfers-name", 
+      "most-transfers-stat", 
+      tinkerManTeam.teamName, 
+      `${displayCount} ${displayCount === 1 ? 'Transfer' : 'Transfers'}`
+    );
   }
 
-  // 7. Total League Transfers
+  // 7. Total League Transfers (Combined sum of all transfers in the league)
   const totalLeagueTransfers = Array.isArray(transactions) ? transactions.length : 0;
-  setCard("total-transfers-name", "total-transfers-stat", "Whole League", `${totalLeagueTransfers} ${totalLeagueTransfers === 1 ? 'Transfer' : 'Transfers'}`);
-
-  // --- 8. Bench Disaster (Most points benched in current GW) ---
-  const currentGW = draftData.league?.current_event || 1;
-
-  try {
-    const benchPromises = entriesList.map(entry => {
-      const entryId = entry.entry_id || entry.id;
-      const url = `${WORKER_URL}?url=${encodeURIComponent(`https://draft.premierleague.com/api/entry/${entryId}/event/${currentGW}`)}`;
-      return fetch(url).then(res => res.ok ? res.json() : null).catch(() => null);
-    });
-
-    const benchResults = await Promise.all(benchPromises);
-
-    let maxBenchPoints = -1;
-    let disasterEntryId = null;
-
-    benchResults.forEach((data, idx) => {
-      if (!data) return;
-      const entryId = entriesList[idx]?.entry_id || entriesList[idx]?.id;
-
-      // Extract bench points from picks array (positions 12 to 15 are bench)
-      const picks = data.picks || [];
-      const benchPicks = picks.filter(p => p.position > 11);
-      
-      // Calculate bench score sum
-      const benchedScore = benchPicks.reduce((sum, p) => sum + (p.points || 0), 0);
-
-      if (benchedScore > maxBenchPoints) {
-        maxBenchPoints = benchedScore;
-        disasterEntryId = entryId;
-      }
-    });
-
-    const disasterTeam = teamsMap[disasterEntryId];
-    if (disasterTeam && maxBenchPoints >= 0) {
-      setCard(
-        "bench-disaster-name", 
-        "bench-disaster-stat", 
-        disasterTeam.teamName, 
-        `${maxBenchPoints} pts on Bench (GW${currentGW})`
-      );
-    }
-  } catch (err) {
-    console.error("Error calculating bench disaster:", err);
-  }
+  setCard(
+    "total-transfers-name", 
+    "total-transfers-stat", 
+    "Whole League", 
+    `${totalLeagueTransfers} ${totalLeagueTransfers === 1 ? 'Transfer' : 'Transfers'}`
+  );
 }
 
 document.addEventListener("DOMContentLoaded", () => {
