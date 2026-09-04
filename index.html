@@ -271,6 +271,64 @@
       </details>
     </section>
 
+    <!-- TEMPORARY INLINE TEST: OverAshievers Transfers -->
+<div id="overashievers-test-box" style="margin: 20px auto; max-width: 600px; padding: 15px; background: #1e1e24; color: #00ff87; border: 2px solid #00ff87; border-radius: 8px; font-family: sans-serif; text-align: center;">
+  <h3>🧪 Inline Test: OverAshievers Transfers</h3>
+  <p id="overashievers-result">Fetching live transfer data...</p>
+</div>
+
+<script>
+(async function testOverAshieversTransfers() {
+  const resultEl = document.getElementById("overashievers-result");
+  const LEAGUE_ID = "12368";
+  const PROXY = "https://fpl-proxy.emanmedia02.workers.dev";
+  
+  const detailsUrl = `${PROXY}?url=${encodeURIComponent(`https://draft.premierleague.com/api/league/${LEAGUE_ID}/details`)}`;
+  const txUrl = `${PROXY}?url=${encodeURIComponent(`https://draft.premierleague.com/api/draft/league/${LEAGUE_ID}/transactions`)}`;
+
+  try {
+    // 1. Fetch details and transactions together
+    const [detailsRes, txRes] = await Promise.all([
+      fetch(detailsUrl),
+      fetch(txUrl)
+    ]);
+
+    const details = await detailsRes.json();
+    const txData = await txRes.json();
+    const transactions = txData.transactions || txData || [];
+
+    // 2. Find the entry ID for "OverAshievers"
+    const entries = details.league_entries || [];
+    const overashieversEntry = entries.find(e => 
+      e.entry_name && e.entry_name.toLowerCase().trim() === "overashievers"
+    );
+
+    if (!overashieversEntry) {
+      resultEl.style.color = "#ff2882";
+      resultEl.innerHTML = `<strong>Error:</strong> Could not find team named "OverAshievers".<br>Available teams: ${entries.map(e => e.entry_name).join(", ")}`;
+      return;
+    }
+
+    const targetEntryId = overashieversEntry.id || overashieversEntry.entry_id;
+
+    // 3. Count total transfers for this entry ID across all gameweeks
+    const totalTransfers = transactions.filter(tx => tx.entry === targetEntryId).length;
+
+    // 4. Display result
+    resultEl.innerHTML = `
+      <strong>Team:</strong> ${overashieversEntry.entry_name} (ID: ${targetEntryId})<br>
+      <strong>Manager:</strong> ${overashieversEntry.player_first_name} ${overashieversEntry.player_last_name}<br>
+      <strong>Total Season Transfers:</strong> <span style="font-size: 22px; color: #fff;">${totalTransfers}</span>
+    `;
+
+  } catch (err) {
+    console.error("Test script error:", err);
+    resultEl.style.color = "#ff2882";
+    resultEl.textContent = `Test Failed: ${err.message}`;
+  }
+})();
+</script>
+
     <footer>
       <span>League ID: 12368</span>
       <span>Data from Fantasy Premier League Draft</span>
