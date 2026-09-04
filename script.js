@@ -25,6 +25,7 @@ async function fetchFPLDraftData() {
     }
 
     renderLeagueTable(draftData);
+    updateMetricCards(draftData);
 
   } catch (error) {
     console.error("Error fetching FPL Draft data:", error);
@@ -33,6 +34,34 @@ async function fetchFPLDraftData() {
       statusElement.style.color = "#ff2882";
     }
   }
+}
+
+function updateMetricCards(draftData) {
+  const entriesList = draftData.league_entries || [];
+  const standingsList = draftData.standings || [];
+
+  // Update Managers Count
+  const managersCard = document.querySelector('[data-card="managers"]');
+  if (managersCard) managersCard.textContent = entriesList.length || 0;
+
+  if (standingsList.length > 0) {
+    // Find highest total score
+    const topScore = Math.max(...standingsList.map(s => s.total ?? s.total_points ?? 0));
+    const topScoreCard = document.querySelector('[data-card="top-score"]');
+    if (topScoreCard) topScoreCard.textContent = topScore;
+
+    // Calculate League Average Total Score
+    const totalSum = standingsList.reduce((acc, s) => acc + (s.total ?? s.total_points ?? 0), 0);
+    const avgScore = Math.round(totalSum / standingsList.length);
+    const avgCard = document.querySelector('[data-card="average"]');
+    if (avgCard) avgCard.textContent = avgScore;
+  }
+
+  // Update Last Refreshed Time
+  const now = new Date();
+  const timeString = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const updatedCard = document.querySelector('[data-card="updated"]');
+  if (updatedCard) updatedCard.textContent = timeString;
 }
 
 function renderLeagueTable(draftData) {
@@ -44,7 +73,6 @@ function renderLeagueTable(draftData) {
   const standingsList = draftData.standings || [];
   const entriesList = draftData.league_entries || [];
 
-  // Map league_entries by id and entry_id to safely link managers
   const teamsMap = {};
   entriesList.forEach(item => {
     const managerDetails = {
@@ -57,11 +85,9 @@ function renderLeagueTable(draftData) {
     if (item.entry_id) teamsMap[item.entry_id] = managerDetails;
   });
 
-  // Decide row source: fallback to entries list if standings not calculated yet
   const rowsToRender = standingsList.length > 0 ? standingsList : entriesList;
 
   rowsToRender.forEach((row, index) => {
-    // Foreign key lookup
     const keyId = row.league_entry || row.entry || row.entry_id || row.id;
     const teamInfo = teamsMap[keyId] || { 
       teamName: row.entry_name || "Unknown Team", 
@@ -71,7 +97,6 @@ function renderLeagueTable(draftData) {
     const rank = row.rank || (index + 1);
     const lastRank = row.last_rank || rank;
     
-    // Rank change calculation for the MOVE column
     let moveHtml = `-`;
     if (lastRank > rank) {
       moveHtml = `<span style="color:#00ff87;">▲ ${lastRank - rank}</span>`;
