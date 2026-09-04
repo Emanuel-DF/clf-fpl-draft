@@ -2,10 +2,7 @@ const LEAGUE_ID = "12368";
 const WORKER_URL = "https://fpl-proxy.emanmedia02.workers.dev"; 
 
 const FPL_DRAFT_API = `https://draft.premierleague.com/api/league/${LEAGUE_ID}/details`;
-const FPL_GAME_API = `https://draft.premierleague.com/api/game`;
-
-const FULL_DRAFT_URL = `${WORKER_URL}?url=${encodeURIComponent(FPL_DRAFT_API)}`;
-const FULL_GAME_URL = `${WORKER_URL}?url=${encodeURIComponent(FPL_GAME_API)}`;
+const FULL_URL = `${WORKER_URL}?url=${encodeURIComponent(FPL_DRAFT_API)}`;
 
 async function fetchFPLDraftData() {
   const statusElement = document.getElementById("status");
@@ -15,29 +12,17 @@ async function fetchFPLDraftData() {
     if (statusElement) statusElement.textContent = "Fetching live FPL Draft data...";
     if (refreshBtn) refreshBtn.style.opacity = "0.5";
 
-    // Fetch both league details and game status in parallel
-    const [leagueRes, gameRes] = await Promise.allSettled([
-      fetch(FULL_DRAFT_URL),
-      fetch(FULL_GAME_URL)
-    ]);
+    const response = await fetch(FULL_URL);
     
-    if (leagueRes.status !== "fulfilled" || !leagueRes.value.ok) {
-      throw new Error(`HTTP error fetching league data!`);
+    if (!response.ok) {
+      throw new Error(`HTTP error! Status: ${response.status}`);
     }
 
-    const draftData = await leagueRes.value.json();
+    const draftData = await response.json();
     console.log("Full FPL Draft API Response:", draftData);
 
-    // Update Current Gameweek Number dynamically
-    if (gameRes.status === "fulfilled" && gameRes.value.ok) {
-      const gameData = await gameRes.value.json();
-      const currentGW = gameData.current_event || gameData.event || 2;
-      updateGameweekNumber(currentGW);
-    } else {
-      // Fallback: Infer GW from standings or default to 2
-      const inferredGW = draftData.league?.current_event || 2;
-      updateGameweekNumber(inferredGW);
-    }
+    // Dynamic Gameweek update
+    updateGameweekHeader(draftData);
 
     if (statusElement && draftData.league) {
       statusElement.textContent = `Connected! Loaded league: ${draftData.league.name}`;
@@ -59,11 +44,16 @@ async function fetchFPLDraftData() {
   }
 }
 
-function updateGameweekNumber(gwNumber) {
+function updateGameweekHeader(draftData) {
   const gwElement = document.getElementById("gw");
-  if (gwElement) {
-    gwElement.textContent = gwNumber;
-  }
+  if (!gwElement) return;
+
+  // Check possible GW fields in league response
+  let currentGW = draftData.league?.current_event || 
+                  draftData.matches?.[0]?.event || 
+                  draftData.standings?.[0]?.event || 2; // Defaults to 2 if undisclosed
+
+  gwElement.textContent = currentGW;
 }
 
 function updateMetricCards(draftData) {
