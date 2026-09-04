@@ -21,6 +21,7 @@ async function fetchFPLDraftData() {
     const draftData = await response.json();
     console.log("Full FPL Draft API Response:", draftData);
 
+    // Update Gameweek Header Dynamically
     updateGameweekHeader(draftData);
 
     if (statusElement && draftData.league) {
@@ -145,24 +146,44 @@ function renderAccolades(draftData) {
 
   const teamsMap = getTeamMap(entriesList);
 
+  // Helper function to safely update element text content
+  const setCard = (nameId, statId, name, stat) => {
+    const nameEl = document.getElementById(nameId);
+    const statEl = document.getElementById(statId);
+    if (nameEl) nameEl.textContent = name;
+    if (statEl) statEl.textContent = stat;
+  };
+
   // 1. Gameweek High Scorer
   const gwHigh = standingsList.reduce((max, item) => 
     ((item.event_total ?? item.points_for ?? 0) > (max.event_total ?? max.points_for ?? -1)) ? item : max, standingsList[0]);
-  const gwHighTeam = teamsMap[gwHigh.league_entry || gwHigh.entry_id];
+  const gwHighTeam = teamsMap[gwHigh?.league_entry || gwHigh?.entry_id];
   if (gwHighTeam) {
-    document.getElementById("gw-high-name").textContent = gwHighTeam.teamName;
-    document.getElementById("gw-high-stat").textContent = `${gwHigh.event_total ?? gwHigh.points_for ?? 0} pts (GW)`;
+    setCard("gw-high-name", "gw-high-stat", gwHighTeam.teamName, `${gwHigh.event_total ?? gwHigh.points_for ?? 0} pts (GW)`);
   }
 
   // 2. Gameweek Flop (Lowest GW Score)
   const gwLow = standingsList.reduce((min, item) => 
     ((item.event_total ?? item.points_for ?? 999) < (min.event_total ?? min.points_for ?? 999)) ? item : min, standingsList[0]);
-  const gwLowTeam = teamsMap[gwLow.league_entry || gwLow.entry_id];
+  const gwLowTeam = teamsMap[gwLow?.league_entry || gwLow?.entry_id];
   if (gwLowTeam) {
-    document.getElementById("gw-low-name").textContent = gwLowTeam.teamName;
-    document.getElementById("gw-low-stat").textContent = `${gwLow.event_total ?? gwLow.points_for ?? 0} pts (GW)`;
+    setCard("gw-low-name", "gw-low-stat", gwLowTeam.teamName, `${gwLow.event_total ?? gwLow.points_for ?? 0} pts (GW)`);
   }
 
-  // 3. Wooden Spoon (Current Lowest Overall)
+  // 3. Wooden Spoon (Lowest Overall)
   const woodenSpoon = standingsList.reduce((min, item) => 
-    ((
+    ((item.total ?? item.total_points ?? 9999) < (min.total ?? min.total_points ?? 9999)) ? item : min, standingsList[0]);
+  const woodenSpoonTeam = teamsMap[woodenSpoon?.league_entry || woodenSpoon?.entry_id];
+  if (woodenSpoonTeam) {
+    setCard("wooden-spoon-name", "wooden-spoon-stat", woodenSpoonTeam.teamName, `${woodenSpoon.total ?? woodenSpoon.total_points ?? 0} pts Total`);
+  }
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  fetchFPLDraftData();
+
+  const refreshBtn = document.getElementById("refresh");
+  if (refreshBtn) {
+    refreshBtn.addEventListener("click", fetchFPLDraftData);
+  }
+});
