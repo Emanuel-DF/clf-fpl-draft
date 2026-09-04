@@ -26,9 +26,10 @@ async function fetchFPLDraftData() {
       statusElement.style.color = "#00ff87";
     }
 
-    // Populate UI components
+    // Render all UI components
     updateMetricCards(draftData);
     renderLeagueTable(draftData);
+    renderAccolades(draftData);
 
   } catch (error) {
     console.error("Error fetching FPL Draft data:", error);
@@ -70,16 +71,7 @@ function updateMetricCards(draftData) {
   }
 }
 
-function renderLeagueTable(draftData) {
-  const tableBody = document.getElementById("league-table-body");
-  if (!tableBody) return;
-
-  tableBody.innerHTML = ""; 
-
-  const standingsList = draftData.standings || [];
-  const entriesList = draftData.league_entries || [];
-
-  // Map entries by id and entry_id to handle foreign key resolution
+function getTeamMap(entriesList) {
   const teamsMap = {};
   entriesList.forEach(item => {
     const managerDetails = {
@@ -91,6 +83,18 @@ function renderLeagueTable(draftData) {
     if (item.id) teamsMap[item.id] = managerDetails;
     if (item.entry_id) teamsMap[item.entry_id] = managerDetails;
   });
+  return teamsMap;
+}
+
+function renderLeagueTable(draftData) {
+  const tableBody = document.getElementById("league-table-body");
+  if (!tableBody) return;
+
+  tableBody.innerHTML = ""; 
+
+  const standingsList = draftData.standings || [];
+  const entriesList = draftData.league_entries || [];
+  const teamsMap = getTeamMap(entriesList);
 
   const rowsToRender = standingsList.length > 0 ? standingsList : entriesList;
 
@@ -125,6 +129,50 @@ function renderLeagueTable(draftData) {
     `;
     tableBody.appendChild(rowElement);
   });
+}
+
+function renderAccolades(draftData) {
+  const standingsList = draftData.standings || [];
+  const entriesList = draftData.league_entries || [];
+  if (standingsList.length === 0) return;
+
+  const teamsMap = getTeamMap(entriesList);
+
+  // 1. Gameweek High Scorer
+  const gwHigh = standingsList.reduce((max, item) => 
+    ((item.event_total ?? item.points_for ?? 0) > (max.event_total ?? max.points_for ?? -1)) ? item : max, standingsList[0]);
+  
+  const gwHighTeam = teamsMap[gwHigh.league_entry || gwHigh.entry_id];
+  const gwHighNameEl = document.getElementById("gw-high-name");
+  const gwHighStatEl = document.getElementById("gw-high-stat");
+
+  if (gwHighNameEl && gwHighTeam) gwHighNameEl.textContent = gwHighTeam.teamName;
+  if (gwHighStatEl) gwHighStatEl.textContent = `${gwHigh.event_total ?? gwHigh.points_for ?? 0} pts (GW)`;
+
+  // 2. League Leader
+  const leader = standingsList.find(s => (s.rank || 1) === 1) || standingsList[0];
+  const leaderTeam = teamsMap[leader.league_entry || leader.entry_id];
+  const topPerformerNameEl = document.getElementById("top-performer-name");
+  const topPerformerStatEl = document.getElementById("top-performer-stat");
+
+  if (topPerformerNameEl && leaderTeam) topPerformerNameEl.textContent = leaderTeam.teamName;
+  if (topPerformerStatEl) topPerformerStatEl.textContent = `${leader.total ?? leader.total_points ?? 0} pts Total`;
+
+  // 3. Closest Margin (Difference between 1st and 2nd place)
+  if (standingsList.length >= 2) {
+    const sorted = [...standingsList].sort((a, b) => (b.total ?? 0) - (a.total ?? 0));
+    const gap = (sorted[0].total ?? 0) - (sorted[1].total ?? 0);
+    const firstTeam = teamsMap[sorted[0].league_entry || sorted[0].entry_id];
+    const secondTeam = teamsMap[sorted[1].league_entry || sorted[1].entry_id];
+
+    const closestNameEl = document.getElementById("closest-race-name");
+    const closestStatEl = document.getElementById("closest-race-stat");
+
+    if (closestNameEl && firstTeam && secondTeam) {
+      closestNameEl.textContent = `${firstTeam.teamName} vs ${secondTeam.teamName}`;
+    }
+    if (closestStatEl) closestStatEl.textContent = `${gap} pts margin`;
+  }
 }
 
 // Initialise event listeners and fetch on page load
