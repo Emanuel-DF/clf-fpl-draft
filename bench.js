@@ -4,10 +4,8 @@
 
 const LEAGUE_ID = "12368";
 const WORKER_URL = "https://fpl-proxy.emanmedia02.workers.dev";
-
 const FPL_DRAFT_BASE = "https://draft.premierleague.com/api";
 
-// Helper function to build proxied requests safely
 function getProxyUrl(targetUrl) {
   return `${WORKER_URL}?url=${encodeURIComponent(targetUrl)}`;
 }
@@ -32,13 +30,13 @@ async function fetchBenchLeagueData() {
       refreshBtn.disabled = true;
     }
 
-    // STEP 1: Fetch League Details AND Bootstrap Static Data simultaneously
+    // STEP 1: Fetch League Details and FPL Draft Game Data
     const leagueDetailsUrl = getProxyUrl(`${FPL_DRAFT_BASE}/league/${LEAGUE_ID}/details`);
-    const bootstrapStaticUrl = getProxyUrl(`${FPL_DRAFT_BASE}/bootstrap-static`);
+    const gameStatusUrl = getProxyUrl(`${FPL_DRAFT_BASE}/game`);
 
-    const [leagueDetailsResponse, bootstrapResponse] = await Promise.all([
+    const [leagueDetailsResponse, gameStatusResponse] = await Promise.all([
       fetch(leagueDetailsUrl),
-      fetch(bootstrapStaticUrl)
+      fetch(gameStatusUrl)
     ]);
 
     if (!leagueDetailsResponse.ok) {
@@ -46,30 +44,44 @@ async function fetchBenchLeagueData() {
     }
 
     const leagueData = await parseJsonResponse(leagueDetailsResponse);
-    let bootstrapData = {};
-    
-    if (bootstrapResponse.ok) {
-      bootstrapData = await parseJsonResponse(bootstrapResponse);
+    let gameData = {};
+
+    if (gameStatusResponse.ok) {
+      try {
+        gameData = await parseJsonResponse(gameStatusResponse);
+      } catch (e) {
+        console.warn("Failed parsing /game endpoint data:", e);
+      }
     }
 
     // DETERMINE ACCURATE CURRENT GAMEWEEK
     let currentGameweek = 1;
 
-    // Check bootstrap events for current or active gameweek
-    if (bootstrapData.events && Array.isArray(bootstrapData.events)) {
-      const activeEvent = bootstrapData.events.find(evt => evt.is_current === true) || 
-                          bootstrapData.events.find(evt => evt.is_next === true);
-      if (activeEvent && activeEvent.id) {
-        currentGameweek = activeEvent.id;
-      }
+    // Strategy A: Draft Game API Endpoint
+    if (gameData && gameData.current_event) {
+      currentGameweek = Number(gameData.current_event);
+    } 
+    // Strategy B: Check League Details Matches Array for highest event played/scheduled
+    else if (leagueData.matches && Array.isArray(leagueData.matches) && leagueData.matches.length > 0) {
+      let maxEventInMatches = 1;
+      leagueData.matches.forEach(function (match) {
+        if (match.event && match.event > maxEventInMatches) {
+          // If match is finished or currently in progress
+          if (match.finished || match.started || match.event <= (leagueData.league?.current_event || 1)) {
+            maxEventInMatches = match.event;
+          }
+        }
+      });
+      currentGameweek = maxEventInMatches;
+    }
+    // Strategy C: Direct fallback checks
+    else if (leagueData.league && leagueData.league.current_event) {
+      currentGameweek = Number(leagueData.league.current_event);
     }
 
-    // Fallback checks if bootstrap static didn't give event ID
-    if (currentGameweek === 1) {
-      currentGameweek = leagueData.league?.current_event || 
-                        leagueData.current_event || 
-                        leagueData.matches?.[leagueData.matches.length - 1]?.event || 
-                        1;
+    // Safeguard to ensure currentGameweek is a valid positive integer
+    if (isNaN(currentGameweek) || currentGameweek < 1) {
+      currentGameweek = 1;
     }
 
     const gwDisplayElement = document.getElementById("gw");
@@ -77,7 +89,6 @@ async function fetchBenchLeagueData() {
       gwDisplayElement.textContent = currentGameweek;
     }
 
-    // Identify League Entries (Managers)
     const leagueEntries = leagueData.league_entries || [];
 
     const managerCountElement = document.getElementById("managerCount");
@@ -157,7 +168,6 @@ async function fetchBenchLeagueData() {
 // ============================================================
 
 async function calculateLeagueBenchStandings(entriesList, maxGameweek, liveStatsByGameweek) {
-  // Initialize data structures for each manager entry
   const managerTotalsMap = entriesList.map(function (entry) {
     const entryId = entry.entry_id || entry.id;
     const teamName = entry.entry_name || "Unnamed Team";
@@ -176,7 +186,6 @@ async function calculateLeagueBenchStandings(entriesList, maxGameweek, liveStats
     };
   });
 
-  // Prepare asynchronous requests for every manager and every GW
   const lineupFetchRequests = [];
 
   for (let gw = 1; gw <= maxGameweek; gw++) {
@@ -211,10 +220,8 @@ async function calculateLeagueBenchStandings(entriesList, maxGameweek, liveStats
     });
   }
 
-  // Await all concurrent lineup requests
   const lineupResults = await Promise.all(lineupFetchRequests);
 
-  // Accumulate bench points per manager
   lineupResults.forEach(function (result) {
     if (!result || !result.lineupData) {
       return;
@@ -224,7 +231,6 @@ async function calculateLeagueBenchStandings(entriesList, maxGameweek, liveStats
     const gw = result.gameweek;
     const picks = result.lineupData.picks || [];
 
-    // Filter picks: Positions 12, 13, 14, 15 are bench positions
     const benchedPicks = picks.filter(function (pickItem) {
       return pickItem.position > 11;
     });
@@ -239,16 +245,13 @@ async function calculateLeagueBenchStandings(entriesList, maxGameweek, liveStats
       currentGameweekBenchPointsTotal += pointsScoredByPlayer;
     });
 
-    // Add to manager running total
     managerTotalsMap[managerIndex].totalBenchPoints += currentGameweekBenchPointsTotal;
 
-    // Record the score if this is the latest Gameweek
     if (gw === maxGameweek) {
       managerTotalsMap[managerIndex].latestGwBenchPoints = currentGameweekBenchPointsTotal;
     }
   });
 
-  // Sort managers in descending order by total bench points scored
   managerTotalsMap.sort(function (managerA, managerB) {
     return managerB.totalBenchPoints - managerA.totalBenchPoints;
   });
@@ -265,7 +268,6 @@ async function parseJsonResponse(response) {
   const jsonText = await response.text();
   let parsedObject = JSON.parse(jsonText);
 
-  // If proxy wraps the response inside a stringified "contents" property
   if (parsedObject && typeof parsedObject.contents === "string") {
     parsedObject = JSON.parse(parsedObject.contents);
   }
@@ -286,7 +288,6 @@ function extractPlayerPointsFromLiveEvent(liveData) {
     return pointsLookup;
   }
 
-  // Handle case where elementsData is an Object indexed by player IDs
   if (typeof elementsData === "object" && !Array.isArray(elementsData)) {
     Object.keys(elementsData).forEach(function (elementId) {
       const playerObj = elementsData[elementId];
@@ -299,7 +300,6 @@ function extractPlayerPointsFromLiveEvent(liveData) {
       pointsLookup[elementId] = playerPoints;
     });
   } 
-  // Handle case where elementsData is an Array of player objects
   else if (Array.isArray(elementsData)) {
     elementsData.forEach(function (playerObj) {
       if (playerObj && typeof playerObj.id !== "undefined") {
@@ -355,14 +355,12 @@ function renderBenchStandingsTable(standingsList) {
 function renderBenchMetricsSummary(standingsList) {
   if (!standingsList || standingsList.length === 0) return;
 
-  // 1. Bench King (Rank 1 Manager)
   const benchKingElement = document.getElementById("benchKing");
   if (benchKingElement) {
     const topManager = standingsList[0];
     benchKingElement.textContent = `${topManager.teamName} (${topManager.totalBenchPoints} pts)`;
   }
 
-  // 2. League Total Benched Points Sum
   const totalBenchedPointsSum = standingsList.reduce(function (runningSum, manager) {
     return runningSum + manager.totalBenchPoints;
   }, 0);
@@ -372,7 +370,6 @@ function renderBenchMetricsSummary(standingsList) {
     totalBenchedElement.textContent = `${totalBenchedPointsSum} pts`;
   }
 
-  // 3. Last Updated Time
   const updatedElement = document.getElementById("updated");
   if (updatedElement) {
     const currentTime = new Date();
