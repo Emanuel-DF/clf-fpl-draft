@@ -2,7 +2,10 @@ const LEAGUE_ID = "12368";
 const WORKER_URL = "https://fpl-proxy.emanmedia02.workers.dev"; 
 
 const FPL_DRAFT_API = `https://draft.premierleague.com/api/league/${LEAGUE_ID}/details`;
+const BOOTSTRAP_API = `https://draft.premierleague.com/api/bootstrap-static`;
+
 const FULL_URL = `${WORKER_URL}?url=${encodeURIComponent(FPL_DRAFT_API)}`;
+const BOOTSTRAP_URL = `${WORKER_URL}?url=${encodeURIComponent(BOOTSTRAP_API)}`;
 
 async function fetchBenchLeagueData() {
   const statusElement = document.getElementById("status");
@@ -12,11 +15,26 @@ async function fetchBenchLeagueData() {
     if (statusElement) statusElement.textContent = "Fetching live FPL Draft data...";
     if (refreshBtn) refreshBtn.style.opacity = "0.5";
 
-    const response = await fetch(FULL_URL);
-    if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
+    // 1. Fetch league details and bootstrap player data in parallel
+    const [detailsRes, bootstrapRes] = await Promise.all([
+      fetch(FULL_URL),
+      fetch(BOOTSTRAP_URL)
+    ]);
 
-    const draftData = await response.json();
-    
+    if (!detailsRes.ok) throw new Error(`League details HTTP error! Status: ${detailsRes.status}`);
+    if (!bootstrapRes.ok) throw new Error(`Bootstrap HTTP error! Status: ${bootstrapRes.status}`);
+
+    const draftData = await detailsRes.json();
+    const bootstrapData = await bootstrapRes.json();
+
+    // Map player IDs to their element stats object
+    const playerMap = {};
+    if (Array.isArray(bootstrapData.elements)) {
+      bootstrapData.elements.forEach(el => {
+        playerMap[el.id] = el;
+      });
+    }
+
     // Determine current GW
     let currentGW = draftData.league?.current_event || 
                     draftData.matches?.[0]?.event || 
@@ -30,23 +48,23 @@ async function fetchBenchLeagueData() {
     if (managerCountEl) managerCountEl.textContent = entries.length;
 
     if (statusElement) {
-      statusElement.textContent = `Calculating bench totals across ${currentGW} Gameweek(s)…`;
+      statusElement.textContent = `Calculating bench totals (GW1 to GW${currentGW})…`;
     }
 
-    const benchStandings = await calculateAllBenchPoints(entries, currentGW);
+    const benchStandings = await calculateAllBenchPoints(entries, currentGW, playerMap);
 
     renderBenchTable(benchStandings);
     updateBenchMetrics(benchStandings);
 
     if (statusElement) {
       statusElement.textContent = `Connected! Loaded league: ${draftData.league?.name || 'CLF Draft'}`;
-      statusElement.style.color = "#313131";
+      statusElement.style.color = "#008a48";
     }
 
   } catch (error) {
     console.error("Error fetching bench data:", error);
     if (statusElement) {
-      statusElement.textContent = "Failed to load live bench data.";
+      statusElement.textContent = "Failed to load live bench data (check console).";
       statusElement.style.color = "#ff2882";
     }
   } finally {
@@ -54,7 +72,7 @@ async function fetchBenchLeagueData() {
   }
 }
 
-async function calculateAllBenchPoints(entries, maxGW) {
+async function calculateAllBenchPoints(entries, maxGW, playerMap) {
   const managerTotals = entries.map(e => ({
     entryId: e.entry_id || e.id,
     teamName: e.entry_name || "Unnamed Team",
@@ -63,26 +81,7 @@ async function calculateAllBenchPoints(entries, maxGW) {
     latestGwBenchPoints: 0
   }));
 
-  // 1. Fetch live player stats for all GWs up to maxGW
-  const liveStatsByGW = {};
-  const livePromises = [];
-
-  for (let gw = 1; gw <= maxGW; gw++) {
-    const liveUrl = `${WORKER_URL}?url=${encodeURIComponent(`https://draft.premierleague.com/api/event/${gw}/live`)}`;
-    livePromises.push(
-      fetch(liveUrl)
-        .then(res => res.ok ? res.json() : null)
-        .then(data => { 
-          // Store elements map (object keyed by player ID)
-          liveStatsByGW[gw] = data?.elements || {}; 
-        })
-        .catch(() => { liveStatsByGW[gw] = {}; })
-    );
-  }
-
-  await Promise.all(livePromises);
-
-  // 2. Fetch every manager's weekly entry details
+  // Fetch every manager's picks for each gameweek from GW1 to maxGW
   const pickPromises = [];
 
   for (let gw = 1; gw <= maxGW; gw++) {
@@ -101,33 +100,31 @@ async function calculateAllBenchPoints(entries, maxGW) {
 
   const pickResults = await Promise.all(pickPromises);
 
-  // 3. Process bench scores for each GW
+  // Process bench scores for each GW
   pickResults.forEach(({ managerIndex, gw, data }) => {
     if (!data || !data.picks) return;
 
-    const gwElements = liveStatsByGW[gw] || {};
     const picks = data.picks || [];
     const subs = data.subs || [];
 
-    // Identify player IDs that were auto-subbed IN to the starting 11
+    // Identify player IDs auto-subbed IN to the starting 11
     const autoSubbedInIds = new Set(subs.map(s => s.element_in));
 
-    // Filter bench players (positions 12 to 15) who were NOT subbed in
+    // Filter sub bench players (positions 12 to 15) who were NOT subbed in
     const trueBenchPicks = picks.filter(p => p.position > 11 && !autoSubbedInIds.has(p.element));
 
     let gwBenchScore = 0;
     trueBenchPicks.forEach(p => {
       const pId = p.element;
-      // Get points from live stats payload
-      const pStats = gwElements[pId] || gwElements[String(pId)];
-      const pts = pStats?.stats?.total_points ?? 0;
+      
+      // Extract gameweek score or fallback to total_points/event_points
+      const playerData = playerMap[pId];
+      const pts = p.points ?? playerData?.event_points ?? playerData?.stats?.total_points ?? 0;
       gwBenchScore += pts;
     });
 
-    // Add to cumulative total
     managerTotals[managerIndex].totalBenchPoints += gwBenchScore;
 
-    // Set latest GW bench score
     if (gw === maxGW) {
       managerTotals[managerIndex].latestGwBenchPoints = gwBenchScore;
     }
