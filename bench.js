@@ -30,13 +30,12 @@ async function fetchBenchLeagueData() {
     if (managerCountEl) managerCountEl.textContent = entries.length;
 
     if (statusElement) {
-      statusElement.textContent = `Calculating bench totals (GW1 to GW${currentGW})…`;
+      statusElement.textContent = `Calculating bench totals across ${currentGW} Gameweek(s)…`;
     }
 
-    // Process benched points for all gameweeks
     const benchStandings = await calculateAllBenchPoints(entries, currentGW);
 
-    renderBenchTable(benchStandings, currentGW);
+    renderBenchTable(benchStandings);
     updateBenchMetrics(benchStandings);
 
     if (statusElement) {
@@ -56,7 +55,6 @@ async function fetchBenchLeagueData() {
 }
 
 async function calculateAllBenchPoints(entries, maxGW) {
-  // Array to store results for each manager
   const managerTotals = entries.map(e => ({
     entryId: e.entry_id || e.id,
     teamName: e.entry_name || "Unnamed Team",
@@ -65,7 +63,7 @@ async function calculateAllBenchPoints(entries, maxGW) {
     latestGwBenchPoints: 0
   }));
 
-  // First, fetch the live player stats for every GW up to maxGW
+  // 1. Fetch live player stats for all GWs up to maxGW
   const liveStatsByGW = {};
   const livePromises = [];
 
@@ -74,14 +72,17 @@ async function calculateAllBenchPoints(entries, maxGW) {
     livePromises.push(
       fetch(liveUrl)
         .then(res => res.ok ? res.json() : null)
-        .then(data => { liveStatsByGW[gw] = data?.elements || {}; })
+        .then(data => { 
+          // Store elements map (object keyed by player ID)
+          liveStatsByGW[gw] = data?.elements || {}; 
+        })
         .catch(() => { liveStatsByGW[gw] = {}; })
     );
   }
 
   await Promise.all(livePromises);
 
-  // Next, fetch each manager's pick selections for every GW
+  // 2. Fetch every manager's weekly entry details
   const pickPromises = [];
 
   for (let gw = 1; gw <= maxGW; gw++) {
@@ -100,31 +101,38 @@ async function calculateAllBenchPoints(entries, maxGW) {
 
   const pickResults = await Promise.all(pickPromises);
 
-  // Calculate points for benched players (positions 12 to 15)
+  // 3. Process bench scores for each GW
   pickResults.forEach(({ managerIndex, gw, data }) => {
     if (!data || !data.picks) return;
 
-    const gwLiveElements = liveStatsByGW[gw] || {};
+    const gwElements = liveStatsByGW[gw] || {};
+    const picks = data.picks || [];
+    const subs = data.subs || [];
 
-    // Filter sub bench players (positions 12, 13, 14, 15)
-    const benchPicks = data.picks.filter(p => p.position > 11);
-    
-    let benchScore = 0;
-    benchPicks.forEach(p => {
-      const playerId = p.element;
-      // Get score from live event stats or direct fallback
-      const playerPts = gwLiveElements[playerId]?.stats?.total_points ?? p.points ?? 0;
-      benchScore += playerPts;
+    // Identify player IDs that were auto-subbed IN to the starting 11
+    const autoSubbedInIds = new Set(subs.map(s => s.element_in));
+
+    // Filter bench players (positions 12 to 15) who were NOT subbed in
+    const trueBenchPicks = picks.filter(p => p.position > 11 && !autoSubbedInIds.has(p.element));
+
+    let gwBenchScore = 0;
+    trueBenchPicks.forEach(p => {
+      const pId = p.element;
+      // Get points from live stats payload
+      const pStats = gwElements[pId] || gwElements[String(pId)];
+      const pts = pStats?.stats?.total_points ?? 0;
+      gwBenchScore += pts;
     });
 
-    managerTotals[managerIndex].totalBenchPoints += benchScore;
+    // Add to cumulative total
+    managerTotals[managerIndex].totalBenchPoints += gwBenchScore;
 
+    // Set latest GW bench score
     if (gw === maxGW) {
-      managerTotals[managerIndex].latestGwBenchPoints = benchScore;
+      managerTotals[managerIndex].latestGwBenchPoints = gwBenchScore;
     }
   });
 
-  // Sort by highest total bench points
   return managerTotals.sort((a, b) => b.totalBenchPoints - a.totalBenchPoints);
 }
 
