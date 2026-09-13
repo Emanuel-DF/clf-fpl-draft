@@ -32,18 +32,45 @@ async function fetchBenchLeagueData() {
       refreshBtn.disabled = true;
     }
 
-    // STEP 1: Fetch League Details
+    // STEP 1: Fetch League Details AND Bootstrap Static Data simultaneously
     const leagueDetailsUrl = getProxyUrl(`${FPL_DRAFT_BASE}/league/${LEAGUE_ID}/details`);
-    const leagueDetailsResponse = await fetch(leagueDetailsUrl);
+    const bootstrapStaticUrl = getProxyUrl(`${FPL_DRAFT_BASE}/bootstrap-static`);
+
+    const [leagueDetailsResponse, bootstrapResponse] = await Promise.all([
+      fetch(leagueDetailsUrl),
+      fetch(bootstrapStaticUrl)
+    ]);
 
     if (!leagueDetailsResponse.ok) {
       throw new Error(`Failed to fetch league details. Status: ${leagueDetailsResponse.status}`);
     }
 
     const leagueData = await parseJsonResponse(leagueDetailsResponse);
+    let bootstrapData = {};
+    
+    if (bootstrapResponse.ok) {
+      bootstrapData = await parseJsonResponse(bootstrapResponse);
+    }
 
-    // Identify current active Gameweek
-    const currentGameweek = leagueData.league?.current_event || leagueData.current_event || 1;
+    // DETERMINE ACCURATE CURRENT GAMEWEEK
+    let currentGameweek = 1;
+
+    // Check bootstrap events for current or active gameweek
+    if (bootstrapData.events && Array.isArray(bootstrapData.events)) {
+      const activeEvent = bootstrapData.events.find(evt => evt.is_current === true) || 
+                          bootstrapData.events.find(evt => evt.is_next === true);
+      if (activeEvent && activeEvent.id) {
+        currentGameweek = activeEvent.id;
+      }
+    }
+
+    // Fallback checks if bootstrap static didn't give event ID
+    if (currentGameweek === 1) {
+      currentGameweek = leagueData.league?.current_event || 
+                        leagueData.current_event || 
+                        leagueData.matches?.[leagueData.matches.length - 1]?.event || 
+                        1;
+    }
 
     const gwDisplayElement = document.getElementById("gw");
     if (gwDisplayElement) {
@@ -67,7 +94,7 @@ async function fetchBenchLeagueData() {
 
     for (let gw = 1; gw <= currentGameweek; gw++) {
       if (statusElement) {
-        statusElement.textContent = `Loading live player performance data for GW${gw}…`;
+        statusElement.textContent = `Loading live player performance data for GW${gw} of GW${currentGameweek}…`;
       }
 
       const liveEventUrl = getProxyUrl(`${FPL_DRAFT_BASE}/event/${gw}/live`);
@@ -89,7 +116,7 @@ async function fetchBenchLeagueData() {
     }
 
     if (statusElement) {
-      statusElement.textContent = `Calculating bench lineups for ${leagueEntries.length} managers…`;
+      statusElement.textContent = `Calculating bench lineups across all ${currentGameweek} Gameweeks…`;
     }
 
     // STEP 3: Process Every Manager's Squad Lineup for Every Gameweek
@@ -105,7 +132,7 @@ async function fetchBenchLeagueData() {
 
     if (statusElement) {
       const leagueName = leagueData.league?.name || "CLF Draft";
-      statusElement.textContent = `Connected! Calculated live bench points for ${leagueName}`;
+      statusElement.textContent = `Connected! Calculated live bench points (GW1-GW${currentGameweek}) for ${leagueName}`;
       statusElement.style.color = "#008a48";
     }
 
