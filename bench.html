@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>CLF Draft 26/27 — Bench League</title>
+  <link rel="stylesheet" href="style.css">
+  <style>
+    .nav-bar {
+      margin-bottom: 1.5rem;
+      display: flex;
+      gap: 12px;
+    }
+    .nav-btn {
+      color: #fff;
+      text-decoration: none;
+      background: rgba(255, 255, 255, 0.1);
+      padding: 8px 16px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 700;
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      transition: background 0.2s ease;
+    }
+    .nav-btn:hover {
+      background: rgba(255, 255, 255, 0.2);
+    }
+    .nav-btn.active {
+      background: #008a48;
+      border-color: #008a48;
+    }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <nav class="nav-bar">
+      <a href="index.html" class="nav-btn">← Main Standings</a>
+      <a href="bench.html" class="nav-btn active">🪑 Bench League</a>
+    </nav>
+
+    <header class="hero">
+      <div>
+        <p class="eyebrow">FANTASY PREMIER LEAGUE • DRAFT</p>
+        <h1>Bench <span>League</span></h1>
+        <p class="sub">Cumulative benched points · Gameweek 1 to <strong id="gw">—</strong></p>
+      </div>
+      <button id="refresh" class="refresh" type="button">↻ Refresh</button>
+    </header>
+
+    <section class="summary" aria-label="Bench League Summary">
+      <div class="stat"><span>Managers</span><strong id="managerCount">—</strong></div>
+      <div class="stat"><span>Bench King</span><strong id="benchKing">—</strong></div>
+      <div class="stat"><span>League Benched Total</span><strong id="totalBenched">—</strong></div>
+      <div class="stat"><span>Updated</span><strong id="updated">—</strong></div>
+    </section>
+
+    <section class="card">
+      <div class="card-head">
+        <div>
+          <h2>Bench Points Standings</h2>
+          <p id="status">Loading benched player data from GW1…</p>
+        </div>
+        <span class="live"><i></i> LIVE</span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>POS</th>
+              <th>MANAGER</th>
+              <th>GW BENCH</th>
+              <th>TOTAL BENCH PTS</th>
+            </tr>
+          </thead>
+          <tbody id="bench-table-body">
+            <!-- Rows render here -->
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <footer>
+      <span>League ID: 12368</span>
+      <span>Data from Fantasy Premier League Draft</span>
+    </footer>
+  </main>
+  <script src="bench.js"></script>
+</body>
+</html>
