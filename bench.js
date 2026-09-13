@@ -9,7 +9,7 @@ async function fetchBenchLeagueData() {
   const refreshBtn = document.getElementById("refresh");
 
   try {
-    if (statusElement) statusElement.textContent = "Fetching live FPL Bench data...";
+    if (statusElement) statusElement.textContent = "Fetching live FPL Draft data...";
     if (refreshBtn) refreshBtn.style.opacity = "0.5";
 
     const response = await fetch(FULL_URL);
@@ -65,15 +65,31 @@ async function calculateAllBenchPoints(entries, maxGW) {
     latestGwBenchPoints: 0
   }));
 
-  // Build batch fetch promises for every manager across all GWs (1..maxGW)
-  const fetchPromises = [];
+  // First, fetch the live player stats for every GW up to maxGW
+  const liveStatsByGW = {};
+  const livePromises = [];
+
+  for (let gw = 1; gw <= maxGW; gw++) {
+    const liveUrl = `${WORKER_URL}?url=${encodeURIComponent(`https://draft.premierleague.com/api/event/${gw}/live`)}`;
+    livePromises.push(
+      fetch(liveUrl)
+        .then(res => res.ok ? res.json() : null)
+        .then(data => { liveStatsByGW[gw] = data?.elements || {}; })
+        .catch(() => { liveStatsByGW[gw] = {}; })
+    );
+  }
+
+  await Promise.all(livePromises);
+
+  // Next, fetch each manager's pick selections for every GW
+  const pickPromises = [];
 
   for (let gw = 1; gw <= maxGW; gw++) {
     entries.forEach((entry, idx) => {
       const entryId = entry.entry_id || entry.id;
       const url = `${WORKER_URL}?url=${encodeURIComponent(`https://draft.premierleague.com/api/entry/${entryId}/event/${gw}`)}`;
       
-      fetchPromises.push(
+      pickPromises.push(
         fetch(url)
           .then(res => res.ok ? res.json() : null)
           .then(data => ({ managerIndex: idx, gw, data }))
@@ -82,14 +98,24 @@ async function calculateAllBenchPoints(entries, maxGW) {
     });
   }
 
-  const results = await Promise.all(fetchPromises);
+  const pickResults = await Promise.all(pickPromises);
 
-  results.forEach(({ managerIndex, gw, data }) => {
+  // Calculate points for benched players (positions 12 to 15)
+  pickResults.forEach(({ managerIndex, gw, data }) => {
     if (!data || !data.picks) return;
 
-    // Positions 12 to 15 are the benched players
+    const gwLiveElements = liveStatsByGW[gw] || {};
+
+    // Filter sub bench players (positions 12, 13, 14, 15)
     const benchPicks = data.picks.filter(p => p.position > 11);
-    const benchScore = benchPicks.reduce((sum, p) => sum + (p.points || 0), 0);
+    
+    let benchScore = 0;
+    benchPicks.forEach(p => {
+      const playerId = p.element;
+      // Get score from live event stats or direct fallback
+      const playerPts = gwLiveElements[playerId]?.stats?.total_points ?? p.points ?? 0;
+      benchScore += playerPts;
+    });
 
     managerTotals[managerIndex].totalBenchPoints += benchScore;
 
@@ -102,7 +128,7 @@ async function calculateAllBenchPoints(entries, maxGW) {
   return managerTotals.sort((a, b) => b.totalBenchPoints - a.totalBenchPoints);
 }
 
-function renderBenchTable(standings, currentGW) {
+function renderBenchTable(standings) {
   const tableBody = document.getElementById("bench-table-body");
   if (!tableBody) return;
 
