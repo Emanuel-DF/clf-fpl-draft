@@ -4,11 +4,8 @@ const WORKER_URL = "https://fpl-proxy.emanmedia02.workers.dev";
 const FPL_DRAFT_API = `https://draft.premierleague.com/api/league/${LEAGUE_ID}/details`;
 const FULL_URL = `${WORKER_URL}?url=${encodeURIComponent(FPL_DRAFT_API)}`;
 
-// Store points per element (player ID) per Gameweek
-const gwPointsMap = {};
-
 // ============================================================
-// LOAD LEAGUE DATA
+// MAIN DATA FETCHING
 // ============================================================
 
 async function fetchBenchLeagueData() {
@@ -19,7 +16,7 @@ async function fetchBenchLeagueData() {
     if (statusElement) statusElement.textContent = "Fetching live FPL Draft data...";
     if (refreshBtn) refreshBtn.style.opacity = "0.5";
 
-    // 1. Fetch league details
+    // 1. Fetch main league details
     const detailsRes = await fetch(FULL_URL);
     if (!detailsRes.ok) throw new Error(`HTTP error! Status: ${detailsRes.status}`);
     const draftData = await detailsRes.json();
@@ -34,35 +31,25 @@ async function fetchBenchLeagueData() {
     if (managerCountEl) managerCountEl.textContent = entries.length;
 
     if (statusElement) {
-      statusElement.textContent = `Loading live scores (GW1 to GW${currentGW})…`;
+      statusElement.textContent = `Fetching live scores for GW1 to GW${currentGW}…`;
     }
 
-    // 2. Fetch live data for each GW
+    // 2. Load all live player scores across all active GWs
+    const liveStatsByGW = {};
     for (let gw = 1; gw <= currentGW; gw++) {
-      if (!gwPointsMap[gw]) {
-        gwPointsMap[gw] = {};
-        const liveUrl = `https://draft.premierleague.com/api/event/${gw}/live`;
-        const proxyLiveUrl = `${WORKER_URL}?url=${encodeURIComponent(liveUrl)}`;
-        
-        try {
-          const liveRes = await fetch(proxyLiveUrl);
-          if (liveRes.ok) {
-            const liveData = await liveRes.json();
-            const elements = liveData.elements || {};
-            
-            // Map player ID -> total_points for this GW
-            Object.keys(elements).forEach(id => {
-              gwPointsMap[gw][id] = elements[id]?.stats?.total_points || 0;
-            });
-          }
-        } catch (e) {
-          console.warn(`Could not load live stats for GW${gw}`, e);
-        }
+      const liveUrl = `https://draft.premierleague.com/api/event/${gw}/live`;
+      const proxyLiveUrl = `${WORKER_URL}?url=${encodeURIComponent(liveUrl)}`;
+      
+      const liveRes = await fetch(proxyLiveUrl);
+      if (liveRes.ok) {
+        const liveData = await liveRes.json();
+        // Store map of element_id -> total_points
+        liveStatsByGW[gw] = liveData.elements || {};
       }
     }
 
-    // 3. Calculate bench points for all managers
-    const benchStandings = await calculateAllBenchPoints(entries, currentGW);
+    // 3. Process managers & bench points
+    const benchStandings = await calculateAllBenchPoints(entries, currentGW, liveStatsByGW);
 
     // 4. Render output
     renderBenchTable(benchStandings);
@@ -88,7 +75,7 @@ async function fetchBenchLeagueData() {
 // CALCULATE BENCH POINTS
 // ============================================================
 
-async function calculateAllBenchPoints(entries, maxGW) {
+async function calculateAllBenchPoints(entries, maxGW, liveStatsByGW) {
   const managerTotals = entries.map(entry => ({
     entryId: entry.entry_id || entry.id,
     teamName: entry.entry_name || "Unnamed Team",
@@ -119,14 +106,14 @@ async function calculateAllBenchPoints(entries, maxGW) {
   results.forEach(({ managerIndex, gw, data }) => {
     if (!data || !data.picks) return;
 
-    // Bench players are position 12, 13, 14, and 15
+    // Bench players occupy positions 12, 13, 14, 15
     const benchPicks = data.picks.filter(pick => pick.position > 11);
+    const gwLiveElements = liveStatsByGW[gw] || {};
 
-    const gwScores = gwPointsMap[gw] || {};
-
-    // Calculate sum of benched player points for this GW
+    // Sum points for benched players using element stats
     const gwBenchPoints = benchPicks.reduce((sum, pick) => {
-      const pts = gwScores[pick.element] || 0;
+      const playerLive = gwLiveElements[pick.element];
+      const pts = playerLive?.stats?.total_points || 0;
       return sum + pts;
     }, 0);
 
