@@ -4,8 +4,8 @@ const WORKER_URL = "https://fpl-proxy.emanmedia02.workers.dev";
 const FPL_DRAFT_API = `https://draft.premierleague.com/api/league/${LEAGUE_ID}/details`;
 const FULL_URL = `${WORKER_URL}?url=${encodeURIComponent(FPL_DRAFT_API)}`;
 
-// Cache to store element scores per GW: { gw: { element_id: points } }
-const gwStatsCache = {};
+// Store points per element (player ID) per Gameweek
+const gwPointsMap = {};
 
 // ============================================================
 // LOAD LEAGUE DATA
@@ -34,20 +34,29 @@ async function fetchBenchLeagueData() {
     if (managerCountEl) managerCountEl.textContent = entries.length;
 
     if (statusElement) {
-      statusElement.textContent = `Fetching live player scores (GW1 to GW${currentGW})…`;
+      statusElement.textContent = `Loading live scores (GW1 to GW${currentGW})…`;
     }
 
-    // 2. Pre-fetch GW live data for all active GWs
+    // 2. Fetch live data for each GW
     for (let gw = 1; gw <= currentGW; gw++) {
-      if (!gwStatsCache[gw]) {
+      if (!gwPointsMap[gw]) {
+        gwPointsMap[gw] = {};
         const liveUrl = `https://draft.premierleague.com/api/event/${gw}/live`;
         const proxyLiveUrl = `${WORKER_URL}?url=${encodeURIComponent(liveUrl)}`;
         
-        const liveRes = await fetch(proxyLiveUrl);
-        if (liveRes.ok) {
-          const liveData = await liveRes.json();
-          // liveData.elements is an object keyed by element ID or an array/object with stats
-          gwStatsCache[gw] = liveData.elements || {};
+        try {
+          const liveRes = await fetch(proxyLiveUrl);
+          if (liveRes.ok) {
+            const liveData = await liveRes.json();
+            const elements = liveData.elements || {};
+            
+            // Map player ID -> total_points for this GW
+            Object.keys(elements).forEach(id => {
+              gwPointsMap[gw][id] = elements[id]?.stats?.total_points || 0;
+            });
+          }
+        } catch (e) {
+          console.warn(`Could not load live stats for GW${gw}`, e);
         }
       }
     }
@@ -100,7 +109,7 @@ async function calculateAllBenchPoints(entries, maxGW) {
         fetch(url)
           .then(res => res.ok ? res.json() : null)
           .then(data => ({ managerIndex, gw, data }))
-          .catch(error => ({ managerIndex, gw, data: null }))
+          .catch(() => ({ managerIndex, gw, data: null }))
       );
     });
   }
@@ -110,14 +119,14 @@ async function calculateAllBenchPoints(entries, maxGW) {
   results.forEach(({ managerIndex, gw, data }) => {
     if (!data || !data.picks) return;
 
-    // Filter picks for bench players (position > 11)
+    // Bench players are position 12, 13, 14, and 15
     const benchPicks = data.picks.filter(pick => pick.position > 11);
-    const gwElements = gwStatsCache[gw] || {};
 
-    // Sum individual player points for this GW
+    const gwScores = gwPointsMap[gw] || {};
+
+    // Calculate sum of benched player points for this GW
     const gwBenchPoints = benchPicks.reduce((sum, pick) => {
-      const playerStat = gwElements[pick.element];
-      const pts = playerStat?.stats?.total_points || 0;
+      const pts = gwScores[pick.element] || 0;
       return sum + pts;
     }, 0);
 
