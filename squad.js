@@ -1,34 +1,31 @@
-// ============================================================
-// CLF DRAFT — SQUAD LEAGUE
-// Official league points + points scored by the four bench players.
-// Uses the same Draft endpoints and bench-scoring approach as bench.js.
-// ============================================================
 
 const LEAGUE_ID = "12368";
 const WORKER_URL = "https://fpl-proxy.emanmedia02.workers.dev";
 const DRAFT_API = "https://draft.premierleague.com/api";
 
-function proxyUrl(targetUrl) {
-  return `${WORKER_URL}?url=${encodeURIComponent(targetUrl)}`;
+function proxyUrl(url) {
+  return `${WORKER_URL}?url=${encodeURIComponent(url)}`;
 }
 
-async function parseJsonResponse(response) {
-  const text = await response.text();
-  let data = JSON.parse(text);
+async function fetchJson(url) {
+  const response = await fetch(url);
 
-  // Supports workers that wrap the upstream response in { contents: "..." }.
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}: ${url}`);
+  }
+
+  let data = await response.json();
+
+  // Handle a worker response wrapped inside a contents property.
   if (data && typeof data.contents === "string") {
     data = JSON.parse(data.contents);
   }
+
   return data;
 }
 
-function getEntryId(entry) {
+function getTeamId(entry) {
   return entry.entry_id || entry.id;
-}
-
-function getStandingsEntryId(row) {
-  return row.league_entry || row.entry || row.entry_id || row.id;
 }
 
 function getOfficialTotal(row) {
@@ -36,21 +33,24 @@ function getOfficialTotal(row) {
 }
 
 function getOfficialGameweekPoints(row) {
-  return Number(row.event_total ?? row.points_for ?? row.event_points ?? 0) || 0;
+  return Number(
+    row.event_total ?? row.points_for ?? row.event_points ?? 0
+  ) || 0;
 }
 
-function extractPlayerPointsFromLiveEvent(liveData) {
+function getPlayerPoints(liveData) {
   const points = {};
   const elements = liveData?.elements;
+
   if (!elements) return points;
 
   if (Array.isArray(elements)) {
     elements.forEach(player => {
-      if (player && player.id != null) {
+      if (player?.id != null) {
         points[player.id] = Number(player.stats?.total_points) || 0;
       }
     });
-  } else if (typeof elements === "object") {
+  } else {
     Object.entries(elements).forEach(([id, player]) => {
       points[id] = Number(player?.stats?.total_points) || 0;
     });
@@ -59,104 +59,121 @@ function extractPlayerPointsFromLiveEvent(liveData) {
   return points;
 }
 
-async function fetchJson(url) {
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error(`Request failed (${response.status}): ${url}`);
-  }
-  return parseJsonResponse(response);
-}
-
 async function getCurrentGameweek(leagueData) {
-  // Prefer the Draft game's current event, as the bench page does.
   try {
-    const gameData = await fetchJson(proxyUrl(`${DRAFT_API}/game`));
-    if (Number(gameData?.current_event) > 0) {
-      return Number(gameData.current_event);
+    const game = await fetchJson(proxyUrl(`${DRAFT_API}/game`));
+
+    if (Number(game.current_event) > 0) {
+      return Number(game.current_event);
     }
   } catch (error) {
-    console.warn("Could not read Draft /game current_event; using league fallback.", error);
+    console.warn("Could not retrieve current gameweek from /game.", error);
   }
 
-  const leagueEvent = Number(leagueData.league?.current_event);
-  if (leagueEvent > 0) return leagueEvent;
+  const leagueGW = Number(leagueData.league?.current_event);
 
-  const matchEvents = (leagueData.matches || [])
+  if (leagueGW > 0) return leagueGW;
+
+  const matchGWs = (leagueData.matches || [])
     .map(match => Number(match.event) || 0)
     .filter(Boolean);
 
-  return matchEvents.length ? Math.max(...matchEvents) : 1;
+  return matchGWs.length ? Math.max(...matchGWs) : 1;
 }
 
-async function fetchBenchPoints(entries, maxGameweek, statusElement) {
-  // Fetch player live scores once per gameweek.
-  const liveStatsByGameweek = {};
+// Calculate unused bench points for every manager.
+async function calculateBenchPoints(entries, maxGW) {
+  const livePointsByGW = {};
 
-  const liveRequests = Array.from({ length: maxGameweek }, (_, index) => {
-    const gw = index + 1;
-    return fetchJson(proxyUrl(`${DRAFT_API}/event/${gw}/live`))
-      .then(data => {
-        liveStatsByGameweek[gw] = extractPlayerPointsFromLiveEvent(data);
-      })
-      .catch(error => {
-        console.warn(`Could not load live player scores for GW${gw}.`, error);
-        liveStatsByGameweek[gw] = {};
-      });
-  });
+  // Fetch player scores for each gameweek.
+  await Promise.all(
+    Array.from({ length: maxGW }, (_, index) => {
+      const gw = index + 1;
 
-  await Promise.all(liveRequests);
+      return fetchJson(
+        proxyUrl(`${DRAFT_API}/event/${gw}/live`)
+      )
+        .then(data => {
+          livePointsByGW[gw] = getPlayerPoints(data);
+        })
+        .catch(error => {
+          console.warn(`Could not load live scores for GW${gw}`, error);
+          livePointsByGW[gw] = {};
+        });
+    })
+  );
 
-  // Fetch every manager's Draft picks for every gameweek.
-  const lineupRequests = [];
-  entries.forEach((entry, managerIndex) => {
-    const entryId = getEntryId(entry);
-
-    for (let gw = 1; gw <= maxGameweek; gw++) {
-      const url = proxyUrl(`${DRAFT_API}/entry/${entryId}/event/${gw}`);
-
-      lineupRequests.push(
-        fetchJson(url)
-          .then(data => ({ managerIndex, gw, data }))
-          .catch(error => {
-            console.warn(`Could not load picks for entry ${entryId}, GW${gw}.`, error);
-            return { managerIndex, gw, data: null };
-          })
-      );
-    }
-  });
-
-  if (statusElement) {
-    statusElement.textContent = `Calculating all 15-player scores across GW1–GW${maxGameweek}…`;
-  }
-
-  const lineupResults = await Promise.all(lineupRequests);
-  const benchTotals = entries.map(() => ({
+  const managerBenchTotals = entries.map(() => ({
     total: 0,
     latest: 0,
     loadedGameweeks: 0
   }));
 
-  lineupResults.forEach(({ managerIndex, gw, data }) => {
-    if (!data || !Array.isArray(data.picks)) return;
+  const requests = [];
 
-    const livePoints = liveStatsByGameweek[gw] || {};
+  // Fetch each manager's picks for every gameweek.
+  entries.forEach((entry, managerIndex) => {
+    const teamId = getTeamId(entry);
 
-    // Draft pick positions 12–15 are the four substitutes/bench slots.
-    const benchPicks = data.picks.filter(pick => Number(pick.position) > 11);
+    for (let gw = 1; gw <= maxGW; gw++) {
+      requests.push(
+        fetchJson(
+          proxyUrl(`${DRAFT_API}/entry/${teamId}/event/${gw}`)
+        )
+          .then(data => ({
+            managerIndex,
+            gw,
+            data
+          }))
+          .catch(error => {
+            console.warn(
+              `Could not load picks for team ${teamId}, GW${gw}`,
+              error
+            );
 
-    const benchPoints = benchPicks.reduce((sum, pick) => {
-      return sum + (Number(livePoints[pick.element]) || 0);
-    }, 0);
-
-    benchTotals[managerIndex].total += benchPoints;
-    benchTotals[managerIndex].loadedGameweeks += 1;
-
-    if (gw === maxGameweek) {
-      benchTotals[managerIndex].latest = benchPoints;
+            return {
+              managerIndex,
+              gw,
+              data: null
+            };
+          })
+      );
     }
   });
 
-  return benchTotals;
+  const results = await Promise.all(requests);
+
+  results.forEach(({ managerIndex, gw, data }) => {
+    if (!data || !Array.isArray(data.picks)) return;
+
+    const picks = data.picks;
+    const livePoints = livePointsByGW[gw] || {};
+
+    // Players automatically substituted into the starting XI
+    // must not be counted again as unused bench players.
+    const autoSubbedIn = new Set(
+      (data.subs || []).map(sub => Number(sub.element_in))
+    );
+
+    // Draft positions 12–15 are the bench positions.
+    const unusedBench = picks.filter(pick =>
+      Number(pick.position) > 11 &&
+      !autoSubbedIn.has(Number(pick.element))
+    );
+
+    const gwBenchPoints = unusedBench.reduce((total, pick) => {
+      return total + (Number(livePoints[pick.element]) || 0);
+    }, 0);
+
+    managerBenchTotals[managerIndex].total += gwBenchPoints;
+    managerBenchTotals[managerIndex].loadedGameweeks++;
+
+    if (gw === maxGW) {
+      managerBenchTotals[managerIndex].latest = gwBenchPoints;
+    }
+  });
+
+  return managerBenchTotals;
 }
 
 function escapeHtml(value) {
@@ -169,23 +186,35 @@ function escapeHtml(value) {
 }
 
 function renderSquadTable(rows) {
-  const body = document.getElementById("squad-table-body");
-  if (!body) return;
+  const tableBody = document.getElementById("squad-table-body");
 
-  body.innerHTML = "";
+  if (!tableBody) {
+    console.error("Could not find #squad-table-body in squad.html");
+    return;
+  }
+
+  tableBody.innerHTML = "";
 
   rows.forEach((row, index) => {
     const tr = document.createElement("tr");
+
     tr.innerHTML = `
       <td>${index + 1}</td>
       <td>
         <strong>${escapeHtml(row.teamName)}</strong><br>
-        <small style="opacity:0.7;">${escapeHtml(row.managerName)}</small>
+        <small style="opacity:0.7;">
+          ${escapeHtml(row.managerName)}
+        </small>
       </td>
       <td>${row.squadGameweekPoints} pts</td>
-      <td><strong style="font-size:16px;color:#008a48;">${row.squadTotalPoints} pts</strong></td>
+      <td>
+        <strong style="font-size:16px;color:#008a48;">
+          ${row.squadTotalPoints} pts
+        </strong>
+      </td>
     `;
-    body.appendChild(tr);
+
+    tableBody.appendChild(tr);
   });
 }
 
@@ -195,15 +224,25 @@ function updateSummary(rows, managerCount) {
   const totalEl = document.getElementById("leagueSquadTotal");
   const updatedEl = document.getElementById("updated");
 
-  if (managerCountEl) managerCountEl.textContent = managerCount;
+  if (managerCountEl) {
+    managerCountEl.textContent = managerCount;
+  }
+
   if (leaderEl) {
     leaderEl.textContent = rows.length
       ? `${rows[0].teamName} (${rows[0].squadTotalPoints} pts)`
       : "—";
   }
 
-  const leagueTotal = rows.reduce((sum, row) => sum + row.squadTotalPoints, 0);
-  if (totalEl) totalEl.textContent = `${leagueTotal} pts`;
+  const leagueTotal = rows.reduce(
+    (sum, row) => sum + row.squadTotalPoints,
+    0
+  );
+
+  if (totalEl) {
+    totalEl.textContent = `${leagueTotal} pts`;
+  }
+
   if (updatedEl) {
     updatedEl.textContent = new Date().toLocaleTimeString([], {
       hour: "2-digit",
@@ -218,14 +257,16 @@ async function fetchSquadLeague() {
 
   try {
     if (status) {
-      status.textContent = "Fetching official standings and bench scores…";
+      status.textContent = "Fetching official league and bench points…";
       status.style.color = "";
     }
+
     if (refresh) {
       refresh.disabled = true;
       refresh.style.opacity = "0.5";
     }
 
+    // 1. Get official Draft league standings.
     const leagueData = await fetchJson(
       proxyUrl(`${DRAFT_API}/league/${LEAGUE_ID}/details`)
     );
@@ -233,45 +274,85 @@ async function fetchSquadLeague() {
     const entries = leagueData.league_entries || [];
     const standings = leagueData.standings || [];
 
-    if (!entries.length) {
-      throw new Error("No league managers were returned by the Draft API.");
+    if (!entries.length || !standings.length) {
+      throw new Error("League entries or official standings are missing.");
     }
 
     const currentGW = await getCurrentGameweek(leagueData);
-    const gwEl = document.getElementById("gw");
-    if (gwEl) gwEl.textContent = currentGW;
 
-    const benchTotals = await fetchBenchPoints(entries, currentGW, status);
+    const gwElement = document.getElementById("gw");
+    if (gwElement) gwElement.textContent = currentGW;
 
-    // Match official standings to managers by Draft league-entry ID.
-    const officialByEntryId = new Map();
+    if (status) {
+      status.textContent =
+        `Calculating all 15-player scores through GW${currentGW}…`;
+    }
+
+    // 2. Calculate the unused bench points.
+    const benchTotals = await calculateBenchPoints(entries, currentGW);
+
+    // 3. Index official standings by league-entry ID.
+    // IMPORTANT:
+    // entry.id is the league-entry ID.
+    // entry.entry_id is the manager's team ID used for fetching picks.
+    const officialByLeagueEntryId = new Map();
+
     standings.forEach(row => {
-      officialByEntryId.set(String(getStandingsEntryId(row)), row);
+      officialByLeagueEntryId.set(
+        String(row.league_entry),
+        row
+      );
     });
 
+    // 4. Add official starting XI points to unused bench points.
     const combinedRows = entries.map((entry, index) => {
-      const entryId = getEntryId(entry);
-      const official = officialByEntryId.get(String(entryId));
+      const leagueEntryId = entry.id;
+      const official = officialByLeagueEntryId.get(
+        String(leagueEntryId)
+      );
 
-      const officialTotal = official ? getOfficialTotal(official) : 0;
-      const officialGW = official ? getOfficialGameweekPoints(official) : 0;
+      if (!official) {
+        console.warn(
+          "No official standings match for:",
+          entry.entry_name,
+          "League entry ID:",
+          leagueEntryId
+        );
+      }
+
+      const startingTotal = official
+        ? getOfficialTotal(official)
+        : 0;
+
+      const startingGW = official
+        ? getOfficialGameweekPoints(official)
+        : 0;
+
       const bench = benchTotals[index];
 
       return {
-        entryId,
         teamName: entry.entry_name || "Unnamed Team",
+
         managerName:
           `${entry.player_first_name || ""} ${entry.player_last_name || ""}`.trim() ||
           "Unknown Manager",
-        squadTotalPoints: officialTotal + bench.total,
-        squadGameweekPoints: officialGW + bench.latest,
-        officialTotal,
+
+        startingTotal,
+        startingGW,
+
         benchTotal: bench.total,
-        benchGameweek: bench.latest,
+        benchGW: bench.latest,
+
+        // THE IMPORTANT CALCULATION:
+        // Official league points + unused bench points.
+        squadTotalPoints: startingTotal + bench.total,
+        squadGameweekPoints: startingGW + bench.latest,
+
         loadedGameweeks: bench.loadedGameweeks
       };
     });
 
+    // 5. Rank managers by their total 15-player squad points.
     combinedRows.sort((a, b) =>
       b.squadTotalPoints - a.squadTotalPoints ||
       b.squadGameweekPoints - a.squadGameweekPoints
@@ -280,28 +361,34 @@ async function fetchSquadLeague() {
     renderSquadTable(combinedRows);
     updateSummary(combinedRows, entries.length);
 
-    const incomplete = benchTotals.some(item => item.loadedGameweeks < currentGW);
+    // Diagnostic breakdown for checking the calculations.
+    console.table(combinedRows.map(row => ({
+      manager: row.teamName,
+      startingXI: row.startingTotal,
+      bench: row.benchTotal,
+      combinedSquad: row.squadTotalPoints
+    })));
+
+    const incomplete = benchTotals.some(
+      item => item.loadedGameweeks < currentGW
+    );
+
     if (status) {
       status.textContent = incomplete
-        ? `Loaded squad standings through GW${currentGW}, but some manager/gameweek picks could not be retrieved. Check the browser console.`
-        : `Live squad table · official points plus bench points · GW1–GW${currentGW}`;
+        ? `Squad table loaded, but some bench data is missing. Check the browser console.`
+        : `Squad League loaded · Starting XI + unused bench · GW1–GW${currentGW}`;
+
       status.style.color = incomplete ? "#ff2882" : "#008a48";
     }
 
-    // Useful diagnostics: compare the two components for each manager.
-    console.table(combinedRows.map(row => ({
-      team: row.teamName,
-      official: row.officialTotal,
-      bench: row.benchTotal,
-      squad: row.squadTotalPoints
-    })));
-
   } catch (error) {
     console.error("Squad League error:", error);
+
     if (status) {
       status.textContent = `Could not load Squad League: ${error.message}`;
       status.style.color = "#ff2882";
     }
+
   } finally {
     if (refresh) {
       refresh.disabled = false;
@@ -312,6 +399,10 @@ async function fetchSquadLeague() {
 
 document.addEventListener("DOMContentLoaded", () => {
   fetchSquadLeague();
+
   const refresh = document.getElementById("refresh");
-  if (refresh) refresh.addEventListener("click", fetchSquadLeague);
+
+  if (refresh) {
+    refresh.addEventListener("click", fetchSquadLeague);
+  }
 });
